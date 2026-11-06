@@ -1,0 +1,52 @@
+openapi: 3.0.3
+info:
+  title: Problem Service API Contract
+  version: 1.0.0
+
+servers:
+  - url: https://soa.shikii.dev/api/v1
+  - url: http://localhost:3033/api/v1
+    description: Test Server
+
+paths:
+  /problems:
+    get:
+      summary: Get accessments list from specific group
+      description: >
+        Fetches all available accessments associated with a given group ID. Access is strictly limited to authorized members of the group.
+
+      parameters:
+        - in: query
+          name: group_id
+          schema:
+            type: string
+          required: true
+
+
+      responses:
+        "200":
+          description: A list of accessments.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: string
+                      description: Accessment UUID.
+                    title:
+                      type: string
+                      description: Name of the accessment.
+                    type:
+                      type: string
+                      enum: [MULTI_CHOICE, ESSAY, HYBRID]
+                      description: Type of the accessment (e.g., Multi-choice, essay,...).
+                    content_url:
+                      type: string
+                      format: uri
+                      description: URL to fetch raw file (PDF/JSON/YAML).
+
+
+      deprecated: false
