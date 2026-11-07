@@ -11,5 +11,8 @@
     ],
     "sharedGlobals": []
   },
-  "neverConnectToCloud": true
+  "neverConnectToCloud": true,
+  "plugins": [
+    "@nx-go/nx-go"
+  ]
 }
