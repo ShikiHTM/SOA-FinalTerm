@@ -1,0 +1,16 @@
+name: LMS-SOA-Project
+services:
+  assessment_pgsql_db:
+    image: postgres:18.6-alpine
+    container_name: assessment_pgsql_db
+    volumes:
+      - assessment_data:/var/lib/postgresql
+    environment:
+      - POSTGRES_USER=${ASSESSMENT_PGSQL_DB_USER}
+      - POSTGRES_PASSWORD=${ASSESSMENT_PGSQL_DB_PASSWORD}
+      - POSTGRES_DB=${ASSESSMENT_PGSQL_DB}
+    ports:
+      - 3033:5432
+
+volumes:
+  assessment_data:
