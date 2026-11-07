@@ -1,19 +1,19 @@
 openapi: 3.0.3
 info:
-  title: Problem Service API Contract
+  title: Assessment Service API Contract
   version: 1.0.0
 
 servers:
   - url: https://soa.shikii.dev/api/v1
   - url: http://localhost:3033/api/v1
-    description: Test Server
+    description: Test Serve
 
 paths:
-  /problems:
+  /asessments:
     get:
-      summary: Get accessments list from specific group
+      summary: Get assessments list from specific group
       description: >
-        Fetches all available accessments associated with a given group ID. Access is strictly limited to authorized members of the group.
+        Fetches all available assessments associated with a given group ID. Access is strictly limited to authorized members of the group.
 
       parameters:
         - in: query
@@ -24,7 +24,7 @@ paths:
 
       responses:
         '200':
-          description: A list of accessments.
+          description: A list of assessments.
           content:
             application/json:
               schema:
@@ -34,18 +34,46 @@ paths:
                   properties:
                     id:
                       type: string
-                      description: Accessment UUID.
+                      format: uuid
+                      description: Assessment UUID.
                     title:
                       type: string
                       description: Name of the accessment.
                     type:
                       type: string
                       enum: [MULTI_CHOICE, ESSAY, HYBRID]
-                      description: Type of the accessment (e.g., Multi-choice, essay,...).
+                      description: Type of the accessment.
+                    status:
+                      type: string
+                      enum: [DRAFT, PRIVATE, PUBLIC]
                     content_url:
                       type: string
                       format: uri
-                      description: URL to fetch raw file (PDF/JSON/YAML).
+                      description: URL to fetch raw file.
+                    content_type:
+                      type: string
+                      enum: [application/pdf, application/json, application/yaml]
+                      description: Format of the file at content_url.
+                    group_id:
+                      type: string
+                      format: uuid
+                      description: Group that owns the assessment.
+                    uploaded_by:
+                      type: string
+                      format: uuid
+                      description: ID of the user who uploaded the assessment.
+                    created_at:
+                      type: string
+                      format: date-time
+                    updated_at:
+                      type: string
+                      format: date-time
+                    deleted_at:
+                      type: string
+                      format: date-time
+                      nullable: true
+                      description: Set when solf-deleted, otherwise null.
+
 
         '400':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
