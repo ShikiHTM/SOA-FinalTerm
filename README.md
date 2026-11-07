@@ -1,96 +1,188 @@
-# SOAFinalTerm
+# Nx Workspace Guide
 
-<a alt="Nx logo" href="https://nx.dev" target="_blank" rel="noreferrer"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-logo.png" width="45"></a>
+## 1. Setup
 
-✨ Your new, shiny [Nx workspace](https://nx.dev) is ready ✨.
-
-[Learn more about this workspace setup and its capabilities](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects) or run `npx nx graph` to visually explore what was created. Now, let's get you up to speed!
-
-## Run tasks
-
-To run tasks with Nx use:
+Install dependencies from the workspace root (requires Node.js and `pnpm`):
 
 ```sh
-npx nx <target> <project-name>
+pnpm install
 ```
 
-For example:
+> Run all `nx` commands from the **repository root** using `pnpm nx ...` (or install `nx` globally with `pnpm add -g nx`).
+
+---
+
+## 2. Running Tasks
+
+### Common Commands
 
 ```sh
-npx nx build myproject
+# Run a target for a specific service
+pnpm nx <target> <service-name>
+
+# Examples
+pnpm nx serve assessment-service
+pnpm nx build assessment-service
+pnpm nx lint assessment-service
+pnpm nx typecheck assessment-service
 ```
 
-These targets are either [inferred automatically](https://nx.dev/concepts/inferred-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) or defined in the `project.json` or `package.json` files.
+### Inspecting a Service's Available Targets
 
-[More about running tasks in the docs &raquo;](https://nx.dev/features/run-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Add new projects
-
-While you could add new projects to your workspace manually, you might want to leverage [Nx plugins](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) and their [code generation](https://nx.dev/features/generate-code?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) feature.
-
-To install a new plugin you can use the `nx add` command. Here's an example of adding the React plugin:
-```sh
-npx nx add @nx/react
-```
-
-Use the plugin's generator to create new projects. For example, to create a new React app or library:
+Nx automatically infers targets from your config files (`rolldown.config.ts`, `tsconfig.json`, `eslint.config.mjs`) and merges them with `project.json`. To see all available targets and exact commands for a service:
 
 ```sh
-# Generate an app
-npx nx g @nx/react:app demo
-
-# Generate a library
-npx nx g @nx/react:lib some-lib
+pnpm nx show project <service-name> --web
+# or in terminal:
+pnpm nx show project <service-name>
 ```
 
-You can use `npx nx list` to get a list of installed plugins. Then, run `npx nx list <plugin-name>` to learn about more specific capabilities of a particular plugin. Alternatively, [install Nx Console](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) to browse plugins and generators in your IDE.
-
-[Learn more about Nx plugins &raquo;](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) | [Browse the plugin registry &raquo;](https://nx.dev/plugin-registry?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-
-## Set up CI!
-
-### Step 1
-
-To connect to Nx Cloud, run the following command:
+### Running Tasks Across Multiple Services
 
 ```sh
-npx nx connect
+# Run a target across all services
+pnpm nx run-many -t build
+pnpm nx run-many -t lint test
+
+# Run targets only on services affected by your git branch changes
+pnpm nx affected -t build lint test
+
+# Visualize service dependency graph
+pnpm nx graph
 ```
 
-Connecting to Nx Cloud ensures a [fast and scalable CI](https://nx.dev/ci/intro/why-nx-cloud?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects) pipeline. It includes features such as:
+---
 
-- [Remote caching](https://nx.dev/ci/features/remote-cache?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task distribution across multiple machines](https://nx.dev/ci/features/distribute-task-execution?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Automated e2e test splitting](https://nx.dev/ci/features/split-e2e-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Task flakiness detection and rerunning](https://nx.dev/ci/features/flaky-tasks?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+## 3. Creating a New Service
 
-### Step 2
+All services live under `applications/<service-name>`.
 
-Use the following command to configure a CI workflow for your workspace:
+Generate a new Node.js / TypeScript service using `@nx/node`:
 
 ```sh
-npx nx g ci-workflow
+pnpm nx g @nx/node:app applications/<service-name> --bundler=rolldown --linter=eslint
 ```
 
-[Learn more about Nx on CI](https://nx.dev/ci/intro/ci-with-nx#ready-get-started-with-your-provider?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+**Adding npm dependencies to your service:**
+1. Add runtime dependencies in `applications/<service-name>/package.json` (used by Rolldown & lockfile pruning) and/or workspace root `package.json`.
+2. Ensure `pnpm-workspace.yaml` includes `applications/*` if managing per-service `package.json` dependencies via pnpm workspaces, then run `pnpm install`.
 
-## Install Nx Console
+---
 
-Nx Console is an editor extension that enriches your developer experience. It lets you run tasks, generate code, and improves code autocompletion in your IDE. It is available for VSCode and IntelliJ.
+## 4. Integrating an Existing Service into Nx
 
-[Install Nx Console &raquo;](https://nx.dev/getting-started/editor-setup?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+If you already wrote your service inside `applications/<service-name>` without using a generator, follow the steps below to hook it into Nx.
 
-## Useful links
+### 1. Create `applications/<service-name>/project.json`
 
-Learn more:
+Every service needs a `project.json` so Nx knows its name and metadata:
 
-- [Learn more about this workspace setup](https://nx.dev/getting-started/intro#learn-nx?utm_source=nx_project&amp;utm_medium=readme&amp;utm_campaign=nx_projects)
-- [Learn about Nx on CI](https://nx.dev/ci/intro/ci-with-nx?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [Releasing Packages with Nx release](https://nx.dev/features/manage-releases?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
-- [What are Nx plugins?](https://nx.dev/concepts/nx-plugins?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+```json
+{
+  "name": "<service-name>",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "applications/<service-name>/src",
+  "tags": []
+}
+```
 
-And join the Nx community:
-- [Discord](https://go.nx.dev/community)
-- [Follow us on X](https://twitter.com/nxdevtools) or [LinkedIn](https://www.linkedin.com/company/nrwl)
-- [Our Youtube channel](https://www.youtube.com/@nxdevtools)
-- [Our blog](https://nx.dev/blog?utm_source=nx_project&utm_medium=readme&utm_campaign=nx_projects)
+### 2. Configure TypeScript, Bundler, and Linter
+
+Nx plugins in `nx.json` automatically infer `build`, `typecheck`, and `lint` when these files exist in `applications/<service-name>`:
+- `package.json` — sets package name (`@soa-final-term/<service-name>`) and runtime `dependencies`
+- `tsconfig.json` & `tsconfig.app.json` — extends `../../tsconfig.base.json` (enables the `typecheck` target)
+- `rolldown.config.ts` — bundles `src/main.ts` to `../../dist/applications/<service-name>` (enables the `build` target)
+- `eslint.config.mjs` — extends `../../eslint.config.mjs` (enables the `lint` target)
+
+You can copy `tsconfig.json`, `tsconfig.app.json`, `rolldown.config.ts`, `eslint.config.mjs`, and `project.json` from `applications/assessment-service` and replace `assessment-service` with `<service-name>`.
+
+To configure how `pnpm nx serve <service-name>` runs your dev server, add a `serve` target in your `project.json`:
+
+```json
+{
+  "targets": {
+    "serve": {
+      "executor": "nx:run-commands",
+      "continuous": true,
+      "options": {
+        "cwd": "applications/<service-name>",
+        "command": "tsx watch src/main.ts"
+      }
+    }
+  }
+}
+```
+
+### 3. Custom Commands (Docker, Codegen, Migrations, etc.)
+
+Use the `nx:run-commands` executor in `applications/<service-name>/project.json` to wire any custom CLI command into Nx:
+
+```json
+{
+  "name": "<service-name>",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "applications/<service-name>/src",
+  "targets": {
+    "build": {
+      "executor": "nx:run-commands",
+      "outputs": ["{workspaceRoot}/dist/applications/<service-name>"],
+      "options": {
+        "cwd": "applications/<service-name>",
+        "command": "<your-build-command>"
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "continuous": true,
+      "options": {
+        "cwd": "applications/<service-name>",
+        "command": "<your-dev-command>"
+      }
+    },
+    "test": {
+      "executor": "nx:run-commands",
+      "options": {
+        "cwd": "applications/<service-name>",
+        "command": "<your-test-command>"
+      }
+    }
+  }
+}
+```
+
+---
+
+## 5. Shared Packages & Service Dependencies
+
+Shared libraries and contracts live in `packages/<pkg-name>`.
+
+- **Generate a shared TS library:**
+  ```sh
+  pnpm nx g @nx/js:lib packages/<pkg-name>
+  ```
+  This registers the path alias in `tsconfig.base.json` so any TS service can import it directly (e.g., `import { ... } from '@soa-final-term/<pkg-name>'`).
+
+- **Declare explicit project dependencies** (e.g., when a service depends on shared OpenAPI specs in `packages/docs` or another service):
+  Add `implicitDependencies` in your service's `project.json`:
+  ```json
+  {
+    "name": "<service-name>",
+    "implicitDependencies": ["docs"]
+  }
+  ```
+
+---
+
+## 6. Verification Checklist Before Pushing
+
+Before opening a PR, verify Nx recognizes and runs your service targets cleanly:
+
+```sh
+# 1. Confirm Nx detects your project and targets
+pnpm nx show project <service-name>
+
+# 2. Run build, lint, typecheck, and test for your service
+pnpm nx run-many -t lint typecheck test build -p <service-name>
+```
