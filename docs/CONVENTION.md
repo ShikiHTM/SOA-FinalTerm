@@ -24,11 +24,11 @@ You're forbidden to touch whatever not in your scope (e.g., Your works is in gro
 
 for `Typescript`:
 
-| Type | Convention |
-| :-- | :-- |
-| Variable | camelCase |
-| Class, Component, Interface, Type | PascalCase |
-| Constant | UPPER_SNAKE_CASE |
+| Type                              | Convention       |
+| :-------------------------------- | :--------------- |
+| Variable                          | camelCase        |
+| Class, Component, Interface, Type | PascalCase       |
+| Constant                          | UPPER_SNAKE_CASE |
 
 ## Format
 
@@ -37,7 +37,7 @@ Please ensure your codebase with those format:
 - Indent: 4 (USING SPACAE).
 - Please add ";" at EOL, its useful than you think.
 - Always specify a variable type whenever you declare it.
- 
+
 Please treat your code as your lover. Do this:
 
 ```ts

@@ -1,0 +1,15 @@
+{
+  "name": "@soa-final-term/source",
+  "version": "0.0.0",
+  "license": "MIT",
+  "scripts": {},
+  "private": true,
+  "dependencies": {},
+  "devDependencies": {
+    "@nx/js": "24.0.5",
+    "@nx/workspace": "24.0.5",
+    "nx": "24.0.5",
+    "typescript": "~6.0.3"
+  },
+  "packageManager": "pnpm@10.18.0"
+}

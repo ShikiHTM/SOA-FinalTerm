@@ -22,9 +22,8 @@ paths:
             type: string
           required: true
 
-
       responses:
-        "200":
+        '200':
           description: A list of accessments.
           content:
             application/json:
@@ -48,5 +47,12 @@ paths:
                       format: uri
                       description: URL to fetch raw file (PDF/JSON/YAML).
 
-
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
       deprecated: false
