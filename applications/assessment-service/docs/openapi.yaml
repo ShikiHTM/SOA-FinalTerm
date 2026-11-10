@@ -4,12 +4,59 @@ info:
   version: 1.0.0
 
 servers:
-  - url: https://soa.shikii.dev/api/v1
-  - url: http://localhost:3033/api/v1
+  - url: https://soa.shikii.dev/api/v1/internal
+  - url: http://localhost:3033/api/v1/internal
     description: Test Serve
 
+components:
+  schemas:
+    Assessment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Assessment UUID.
+        title:
+          type: string
+          description: Name of the accessment.
+        type:
+          type: string
+          enum: [MULTI_CHOICE, ESSAY, HYBRID]
+          description: Type of the accessment.
+        status:
+          type: string
+          enum: [DRAFT, PRIVATE, PUBLIC]
+        content_url:
+          type: string
+          format: uri
+          description: URL to fetch raw file.
+        content_type:
+          type: string
+          enum: [application/pdf, application/json, application/yaml]
+          description: Format of the file at content_url.
+        group_id:
+          type: string
+          format: uuid
+          description: Group that owns the assessment.
+        uploaded_by:
+          type: string
+          format: uuid
+          description: ID of the user who uploaded the assessment.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        deleted_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when solf-deleted, otherwise null.
+
 paths:
-  /asessments:
+  /assessments:
     get:
       summary: Get assessments list from specific group
       description: >
@@ -30,50 +77,144 @@ paths:
               schema:
                 type: array
                 items:
-                  type: object
-                  properties:
-                    id:
-                      type: string
-                      format: uuid
-                      description: Assessment UUID.
-                    title:
-                      type: string
-                      description: Name of the accessment.
-                    type:
-                      type: string
-                      enum: [MULTI_CHOICE, ESSAY, HYBRID]
-                      description: Type of the accessment.
-                    status:
-                      type: string
-                      enum: [DRAFT, PRIVATE, PUBLIC]
-                    content_url:
-                      type: string
-                      format: uri
-                      description: URL to fetch raw file.
-                    content_type:
-                      type: string
-                      enum: [application/pdf, application/json, application/yaml]
-                      description: Format of the file at content_url.
-                    group_id:
-                      type: string
-                      format: uuid
-                      description: Group that owns the assessment.
-                    uploaded_by:
-                      type: string
-                      format: uuid
-                      description: ID of the user who uploaded the assessment.
-                    created_at:
-                      type: string
-                      format: date-time
-                    updated_at:
-                      type: string
-                      format: date-time
-                    deleted_at:
-                      type: string
-                      format: date-time
-                      nullable: true
-                      description: Set when solf-deleted, otherwise null.
+                  $ref: '#/components/schemas/Assessment'
 
+
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+      deprecated: false
+
+    post:
+      summary: Create a new assessment
+      description: >
+        Uploads an assessment file (PDF/JSON/YAML) to S3 and creates its metadata record.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - title
+                - type
+                - group_id
+                - file
+              properties:
+                title:
+                  type: string
+                  description: Name of the assessment.
+                type:
+                  type: string
+                  enum: [MULTI_CHOICE, ESSAY, HYBRID]
+                  description: Type of the assessment.
+                status:
+                  type: string
+                  enum: [DRAFT, PRIVATE, PUBLIC]
+                  default: DRAFT
+                  description: Optional initial visibility status (defaults to DRAFT).
+                group_id:
+                  type: string
+                  format: uuid
+                  description: Group that owns the assessment.
+                file:
+                  type: string
+                  format: binary
+                  description: Assessment raw file (PDF, JSON, or YAML) to upload to S3.
+      responses:
+        '201':
+          description: Assessment successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /assessments/{id}:
+    get:
+      summary: Get specific assessment.
+      description: >
+          Fetches specific assessment by id. Access is strictly limited to authorized members of the group.
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: assessment id
+
+      responses:
+        '200':
+          description: assessment with specific id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+      deprecated: false
+
+    put:
+      summary: Adjusts specific assessments information.
+
+      parameters:
+        - in: path
+          name: id
+          schema:
+            type: string
+          required: true
+          description: assessment id
+
+      requestBody:
+        description: Assessment components to be adjusted.
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                title:
+                  type: string
+                  description: Name of the assessment.
+                type:
+                  type: string
+                  enum: [MULTI_CHOICE, ESSAY, HYBRID]
+                  description: Type of the assessment.
+                status:
+                  type: string
+                  enum: [DRAFT, PRIVATE, PUBLIC]
+                  description: Visibility status of the assessment.
+                file:
+                  type: string
+                  format: binary
+                  description: Optional new file to upload to S3.
+
+      responses:
+        '200':
+          description: Assessment successfully updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assessment'
 
         '400':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
