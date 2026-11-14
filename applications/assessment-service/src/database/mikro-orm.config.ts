@@ -1,5 +1,7 @@
-import { defineConfig } from "@mikro-orm/postgresql";
+import { defineConfig, type Options } from "@mikro-orm/postgresql";
 
-export default defineConfig({
+const config: Options = defineConfig({
   debug: true
 })
+
+export default config;
