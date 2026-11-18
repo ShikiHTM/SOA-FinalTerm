@@ -1,5 +1,42 @@
 name: LMS-SOA-Project
 services:
+  notification_pgsql_db:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:-notification}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_dev}
+      POSTGRES_DB: ${NOTIFICATION_DB_NAME:-notification_db}
+    volumes:
+      - notification_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  notification_service:
+    build:
+      context: .
+      dockerfile: applications/notification-service/Dockerfile
+    environment:
+      PORT: 3037
+      NOTIFICATION_DB_HOST: notification_pgsql_db
+      NOTIFICATION_DB_PORT: 5432
+      NOTIFICATION_DB_USER: ${NOTIFICATION_DB_USER:-notification}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification_dev}
+      NOTIFICATION_DB_NAME: ${NOTIFICATION_DB_NAME:-notification_db}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET:-}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080}
+      KAFKA_ENABLED: ${KAFKA_ENABLED:-false}
+      KAFKA_BROKERS: ${KAFKA_BROKERS:-}
+      KAFKA_NOTIFICATION_TOPIC: ${KAFKA_NOTIFICATION_TOPIC:-notification.requested.v1}
+    ports:
+      - 3037:3037
+    depends_on:
+      notification_pgsql_db:
+        condition: service_healthy
+    restart: on-failure
+
   assessment_pgsql_db:
     image: postgres:18.6-alpine
     container_name: assessment_pgsql_db
@@ -21,7 +58,8 @@ services:
       URLS: >
         [
           { "url": "/applications/assessment-service/docs/openapi.yaml", "name": "Assessment Service" },
-          { "url": "/applications/submission-service/docs/openapi.yaml", "name": "Submission Service" }
+          { "url": "/applications/submission-service/docs/openapi.yaml", "name": "Submission Service" },
+          { "url": "/applications/notification-service/docs/openapi.yaml", "name": "Notification Service" }
         ]
     volumes:
       - ./applications:/usr/share/nginx/html/applications:ro
@@ -29,3 +67,4 @@ services:
 
 volumes:
   assessment_data:
+  notification_data:

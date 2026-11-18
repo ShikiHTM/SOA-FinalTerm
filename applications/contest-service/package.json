@@ -1,0 +1,23 @@
+﻿{
+    "name":  "@soa-final-term/contest-service",
+    "version":  "0.1.0",
+    "private":  true,
+    "scripts":  {
+                    "dev":  "tsx watch src/main.ts",
+                    "start":  "tsx src/main.ts",
+                    "typecheck":  "tsc --noEmit",
+                    "db:init":  "tsx src/init-db.ts",
+                    "build":  "esbuild src/main.ts --bundle --platform=node --target=node22 --format=esm --packages=external --outfile=dist/main.js",
+                    "start:prod":  "node dist/main.js"
+                },
+    "dependencies":  {
+                         "@hono/node-server":  "^1.13.0",
+                         "hono":  "^4.13.0",
+                         "pg":  "^8.13.0",
+                         "zod":  "^3.24.0",
+                         "dotenv":  "^16.4.0"
+                     },
+    "devDependencies":  {
+                            "@types/pg":  "^8.11.0"
+                        }
+}
