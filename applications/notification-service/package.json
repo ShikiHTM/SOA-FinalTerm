@@ -1,0 +1,21 @@
+{
+    "name": "@soa-final-term/notification-service",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "engines": {
+        "node": ">=22.18.0"
+    },
+    "scripts": {
+        "start": "node src/index.ts",
+        "test": "node --test tests/notification.test.ts",
+        "typecheck": "tsc --project tsconfig.json --noEmit"
+    },
+    "dependencies": {
+        "kafkajs": "2.2.4",
+        "pg": "^8.23.1"
+    },
+    "devDependencies": {
+        "@types/pg": "^8.23.1"
+    }
+}

@@ -1,0 +1,249 @@
+openapi: 3.0.3
+info:
+  title: Notification Service API Contract
+  version: 1.0.0
+  description: API for creating and managing in-app notifications.
+
+servers:
+  - url: https://soa.shikii.dev/api/v1
+  - url: http://localhost:3037/api/v1
+    description: Test Server
+
+components:
+  schemas:
+    Notification:
+      type: object
+      required:
+        - id
+        - recipient_user_id
+        - type
+        - title
+        - body
+        - is_read
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Notification UUID.
+        recipient_user_id:
+          type: string
+          description: User who receives the notification.
+        type:
+          type: string
+          enum:
+            - GROUP_JOIN_APPROVED
+            - GROUP_JOIN_REJECTED
+            - CONTEST_PUBLISHED
+            - CONTEST_STARTING
+            - SUBMISSION_GRADED
+          description: Notification event type.
+        title:
+          type: string
+          description: Short notification title.
+        body:
+          type: string
+          description: Notification message.
+        resource_type:
+          type: string
+          nullable: true
+          enum: [GROUP, CONTEST, SUBMISSION]
+          description: Related resource type, if any.
+        resource_id:
+          type: string
+          nullable: true
+          description: Related resource identifier, if any.
+        is_read:
+          type: boolean
+          description: Whether the notification has been read.
+        created_at:
+          type: string
+          format: date-time
+          description: Time when the notification was created.
+
+    CreateNotification:
+      type: object
+      required:
+        - recipient_user_id
+        - type
+        - title
+        - body
+      properties:
+        recipient_user_id:
+          type: string
+          description: User who receives the notification.
+        type:
+          type: string
+          enum:
+            - GROUP_JOIN_APPROVED
+            - GROUP_JOIN_REJECTED
+            - CONTEST_PUBLISHED
+            - CONTEST_STARTING
+            - SUBMISSION_GRADED
+        title:
+          type: string
+          minLength: 1
+        body:
+          type: string
+          minLength: 1
+        resource_type:
+          type: string
+          enum: [GROUP, CONTEST, SUBMISSION]
+        resource_id:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required:
+        - error_code
+        - message
+      properties:
+        error_code:
+          type: string
+        message:
+          type: string
+
+paths:
+  /internal/notifications:
+    post:
+      summary: Create a notification for a user
+      description: >
+        Internal service-to-service endpoint. The calling service must provide
+        the shared internal secret configured for the platform.
+      parameters:
+        - in: header
+          name: X-Internal-Secret
+          schema:
+            type: string
+          required: true
+          description: Shared secret used to authenticate internal services.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateNotification'
+      responses:
+        '201':
+          description: Notification successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '413':
+          description: Request body exceeds the 1 MB limit.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+        '503':
+          description: Internal service secret is not configured.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /notifications:
+    get:
+      summary: Get notifications for the authenticated user
+      description: >
+        Fetches the authenticated user's notifications. The API Gateway must
+        forward the user's identity in the X-User-Id header.
+      parameters:
+        - in: header
+          name: X-User-Id
+          schema:
+            type: string
+          required: true
+          description: Authenticated user ID forwarded by the API Gateway.
+        - in: query
+          name: unread_only
+          schema:
+            type: boolean
+            default: false
+          required: false
+          description: Return only unread notifications when true.
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          required: false
+          description: Maximum number of notifications to return.
+      responses:
+        '200':
+          description: Notifications belonging to the authenticated user.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Notification'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /notifications/{notification_id}/read:
+    patch:
+      summary: Mark a notification as read
+      description: >
+        Marks one of the authenticated user's notifications as read. A
+        notification belonging to another user is not exposed.
+      parameters:
+        - in: header
+          name: X-User-Id
+          schema:
+            type: string
+          required: true
+          description: Authenticated user ID forwarded by the API Gateway.
+        - in: path
+          name: notification_id
+          schema:
+            type: string
+            format: uuid
+          required: true
+          description: Notification UUID.
+      responses:
+        '204':
+          description: Notification marked as read.
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /health:
+    get:
+      summary: Check service health
+      responses:
+        '200':
+          description: Service is running.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: notification-service

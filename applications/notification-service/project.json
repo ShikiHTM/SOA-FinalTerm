@@ -1,0 +1,24 @@
+{
+    "$schema": "../../node_modules/nx/schemas/project-schema.json",
+    "name": "notification-service",
+    "sourceRoot": "applications/notification-service/src",
+    "projectType": "application",
+    "targets": {
+        "build": {
+            "executor": "nx:run-commands",
+            "outputs": ["{workspaceRoot}/dist/applications/notification-service"],
+            "options": {
+                "command": "node scripts/build.ts",
+                "cwd": "applications/notification-service"
+            }
+        },
+        "serve": {
+            "executor": "nx:run-commands",
+            "continuous": true,
+            "options": {
+                "command": "node src/index.ts",
+                "cwd": "applications/notification-service"
+            }
+        }
+    }
+}
