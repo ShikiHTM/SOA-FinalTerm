@@ -1,0 +1,15 @@
+{
+  "name": "group-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "projectType": "application",
+  "sourceRoot": "applications/group-service/src",
+  "targets": {
+    "serve": {
+      "command": "pnpm --filter @soa-final-term/group-service dev",
+      "continuous": true
+    },
+    "typecheck": {
+      "command": "pnpm --filter @soa-final-term/group-service typecheck"
+    }
+  }
+}
