@@ -23,6 +23,7 @@ export function Auth({
     async function login(event: FormEvent): Promise<void> {
         event.preventDefault();
         try {
+            // TODO: Kết nối đăng nhập, đăng ký và phiên thật theo contract xác thực của Gateway.
             if (register) await getServices().accounts.register(email, password);
             onLogin(await getServices().accounts.authenticate(email, password));
         } catch (reason: unknown) {
@@ -87,6 +88,7 @@ export function Auth({
                         )}
                         <button className="button primary">Tiếp tục</button>
                     </form>
+                    {/* TODO: Tích hợp chuyển hướng và callback OAuth sau khi có contract Google/GitHub. */}
                     <div className="auth-providers" aria-label="Phương thức đăng nhập khác">
                         <div className="auth-providers-divider">
                             <span>hoặc tiếp tục với</span>

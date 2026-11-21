@@ -95,6 +95,7 @@ export function AssessmentEditor(): ReactNode {
             return;
         }
         try {
+            // TODO: Gửi đề nhập trực tiếp hoặc PDF theo contract Assessment và luồng lưu trữ đã thống nhất.
             const assessment: Assessment = {
                 id: existing?.id ?? id(),
                 groupId,

@@ -5,6 +5,7 @@
 ## Trạng thái
 
 - Chạy với dữ liệu mock; chưa tích hợp API Gateway hoặc xác thực thật.
+- Mock chỉ sử dụng tạm thời; sau khi các service và Gateway giao tiếp đầy đủ, được kiểm thử tích hợp thành công thì loại bỏ toàn bộ mock và chế độ thử vai trò.
 
 ## Khởi chạy
 

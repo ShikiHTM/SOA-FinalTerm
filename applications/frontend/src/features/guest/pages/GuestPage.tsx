@@ -24,6 +24,7 @@ export function GuestPage({ themeControl }: GuestPageProps): ReactNode {
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
 
     useEffect((): void => {
+        // TODO: Lấy nhóm và kỳ thi được phép công khai qua Gateway theo quyền Guest.
         void getServices().createDataSource("").read().then(setData).catch((reason: unknown): void => {
             setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu.");
         });

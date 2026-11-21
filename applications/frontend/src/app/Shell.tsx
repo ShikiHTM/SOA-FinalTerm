@@ -27,6 +27,7 @@ export function Shell({
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
     async function refresh(): Promise<void> {
         try {
+            // TODO: Tải dữ liệu theo từng nghiệp vụ qua Gateway thay cho Snapshot mock tổng hợp.
             setData(await api.read());
             setError("");
         } catch (reason: unknown) {

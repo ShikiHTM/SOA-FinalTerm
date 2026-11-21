@@ -19,6 +19,7 @@ export function Notifications(): ReactNode {
     async function mark(id: string): Promise<void> {
         try {
             setError("");
+            // TODO: Lấy và đánh dấu thông báo qua Gateway theo contract Notification và danh tính phiên.
             await api.markRead(id);
             await refresh();
         } catch (reason: unknown) {

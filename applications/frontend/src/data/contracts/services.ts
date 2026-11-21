@@ -9,6 +9,7 @@ export type Account = {
 };
 
 export interface AccountService {
+    // TODO: Đối chiếu danh tính, vai trò, phiên và lỗi với contract xác thực của Gateway.
     list(): Promise<Account[]>;
     register(email: string, password: string): Promise<void>;
     authenticate(email: string, password: string): Promise<string>;

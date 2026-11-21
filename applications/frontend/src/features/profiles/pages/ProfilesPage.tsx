@@ -16,6 +16,7 @@ export function ProfilesPage({ email }: { email: string }): ReactNode {
 
     async function reload(): Promise<void> {
         try {
+            // TODO: Lấy hồ sơ, thông tin theo dõi và quyền theo contract User/Gateway.
             const items: Account[] = await getServices().accounts.list();
             setAccounts(items);
             const account: Account | undefined = items.find((item: Account): boolean => item.email === target);

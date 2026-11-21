@@ -10,6 +10,7 @@ export function AdminPage(): ReactNode {
     const [accounts, setAccounts]: [Account[], Dispatch<SetStateAction<Account[]>>] = useState<Account[]>([]);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
     const [busy, setBusy]: [boolean, Dispatch<SetStateAction<boolean>>] = useState<boolean>(false);
+    // TODO: Lấy danh sách và thao tác quản trị tài khoản qua API được phân quyền.
     useEffect((): void => { void getServices().accounts.list().then(setAccounts).catch((reason: unknown): void => setError(reason instanceof Error ? reason.message : "Không tải được tài khoản.")); }, []);
 
     async function changeStatus(target: string, status: Account["status"]): Promise<void> {

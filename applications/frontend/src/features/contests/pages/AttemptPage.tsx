@@ -39,6 +39,7 @@ export function Attempt(): ReactNode {
             setError("Không thể lưu bản nháp trong trình duyệt.");
         }
     }, [key, answers]);
+    // TODO: Đối chiếu lưu bản nháp, thời hạn và tự nộp với contract Contest/Submission; backend phải xử lý thời hạn.
     useEffect((): (() => void) | undefined => {
         if (!contest || !exam || !group || !hasAccess(group) || exam.source === "PDF") return undefined;
         let timer: ReturnType<typeof setTimeout> | undefined;

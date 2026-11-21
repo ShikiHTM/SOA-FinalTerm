@@ -3,6 +3,7 @@ import { createMockServices } from "./mock/services";
 
 const selectedSource: string = import.meta.env.VITE_DATA_SOURCE || "mock";
 
+// TODO: Tạo và chọn adapter Gateway theo contract đã thống nhất; mock chỉ dùng tạm thời.
 export const dataSourceError: string = selectedSource === "mock"
     ? ""
     : selectedSource === "api"
