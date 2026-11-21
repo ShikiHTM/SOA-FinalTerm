@@ -6,10 +6,11 @@ import {
     GraduationCap,
     Users
 } from "lucide-react";
-import { type ReactNode } from "react";
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Link,useParams } from "react-router-dom";
 import { date,hasAccess,useApp } from "../../../shared/context";
 import type { Assessment,Contest,Group,Submission } from "../../../types";
+import { getContestStatus, watchContestClock, type ContestStatus } from "../utils/contestClock";
 
 export function ContestDetail(): ReactNode {
     const { contestId }: { contestId?: string } = useParams();
@@ -23,15 +24,15 @@ export function ContestDetail(): ReactNode {
     const group: Group | undefined = data.groups.find(
         (item: Group): boolean => item.id === exam?.groupId,
     );
+    const [now, setNow]: [number, Dispatch<SetStateAction<number>>] = useState<number>(Date.now);
+    useEffect((): (() => void) => {
+        return watchContestClock(contest?.startAt, contest?.endAt, setNow);
+    }, [contest?.startAt, contest?.endAt]);
+
     if (!contest || !exam || !group || !hasAccess(group))
         return <p className="empty">Không xem được kỳ thi.</p>;
-    const now: number = Date.now();
-    const status: string =
-        now < Date.parse(contest.startAt)
-            ? "Sắp diễn ra"
-            : now >= Date.parse(contest.endAt)
-              ? "Đã kết thúc"
-              : "Đang diễn ra";
+    // TODO: Đối chiếu trạng thái và quyền tham gia với contract Contest/Gateway khi tích hợp.
+    const status: ContestStatus = getContestStatus(contest.startAt, contest.endAt, now);
     const submissions: Submission[] = data.submissions.filter(
         (item: Submission): boolean => item.contestId === contest.id && item.authorEmail === email,
     );

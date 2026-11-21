@@ -40,9 +40,15 @@ export interface AssessmentDataSource {
 }
 
 // TODO: Đối chiếu thời gian, quyền tham gia và chính sách nộp với contract Contest/Submission.
+export type AttemptStatus =
+    | { state: "NOT_STARTED" }
+    | { state: "IN_PROGRESS" }
+    | { state: "SUBMITTED"; submissionId: string };
+
 export interface ContestDataSource {
     createContest(contest: Contest): Promise<void>;
     startAttempt(contestId: string): Promise<void>;
+    getAttemptStatus(contestId: string): Promise<AttemptStatus>;
     submit(contestId: string, answers: Record<string, string[]>, auto?: boolean): Promise<void>;
 }
 

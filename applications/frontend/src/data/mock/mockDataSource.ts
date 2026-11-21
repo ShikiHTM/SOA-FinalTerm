@@ -3,7 +3,7 @@ import { getPreviewRole, isMockSystemAdmin, PREVIEW_DATA_KEY, PREVIEW_GROUP_ID }
 import { canManageMember, hasGroupPermission, hasSystemPermission, type GroupPermission, type SystemRole } from "../../authorization/permissions";
 import type { MockStore, RecipientNotice } from "./mockTypes";
 import { seed } from "./seed";
-import type { DataSource } from "../contracts/dataSource";
+import type { AttemptStatus, DataSource } from "../contracts/dataSource";
 import type {
     Assessment,
     Contest,
@@ -504,6 +504,19 @@ export function createMockDataSource(email: string): DataSource {
             store.attempts ??= {};
             store.attempts[`${email}:${contestId}`] ??= Date.now();
             save(store);
+        },
+        async getAttemptStatus(contestId: string): Promise<AttemptStatus> {
+            const store: MockStore = readStore();
+            if (!email || !store.contests.some((item: Contest): boolean => item.id === contestId)) {
+                throw new Error("Không tìm thấy kỳ thi hoặc người dùng.");
+            }
+            if (store.attempts?.[`${email}:${contestId}`] !== undefined) {
+                return { state: "IN_PROGRESS" };
+            }
+            const submission: Submission | undefined = store.submissions.find(
+                (item: Submission): boolean => item.contestId === contestId && item.authorEmail === email,
+            );
+            return submission ? { state: "SUBMITTED", submissionId: submission.id } : { state: "NOT_STARTED" };
         },
         async submit(contestId: string, answers: Record<string, string[]>, auto: boolean = false): Promise<void> {
             const store: MockStore = readStore();

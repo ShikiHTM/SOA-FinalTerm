@@ -2,27 +2,49 @@ import {
     FileText
 } from "lucide-react";
 import type { Dispatch,SetStateAction } from "react";
-import { useEffect,useState,type ReactNode } from "react";
+import { useEffect,useLayoutEffect,useRef,useState,type ReactNode } from "react";
 import { Link,useNavigate,useParams } from "react-router-dom";
 import { date,hasAccess,useApp } from "../../../shared/context";
 import type { Assessment,Contest,Group,Question } from "../../../types";
+import { ExpiredAttempt, type AutoSubmitStatus } from "../components/ExpiredAttempt";
+import { resolveExpiredAttempt, type ExpiredAttemptResolution } from "../utils/resolveExpiredAttempt";
+import { watchAttemptDeadline } from "../utils/attemptDeadline";
 
 export function Attempt(): ReactNode {
     const { contestId }: { contestId?: string } = useParams();
     const { data, api, refresh, email }: ReturnType<typeof useApp> = useApp();
     const navigate: ReturnType<typeof useNavigate> = useNavigate();
     const key: string = `lms-v2-draft:${email}:${contestId}`;
+    const hasDraft: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
+    const startedHere: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
     const [answers, setAnswers]: [
         Record<string, string[]>,
         Dispatch<SetStateAction<Record<string, string[]>>>,
     ] = useState<Record<string, string[]>>((): Record<string, string[]> => {
         try {
-            return JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, string[]>;
+            const saved: string | null = localStorage.getItem(key);
+            if (saved === null) return {};
+            const parsed: unknown = JSON.parse(saved);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+            hasDraft.current = true;
+            return parsed as Record<string, string[]>;
         } catch {
             return {};
         }
     });
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
+    const [submissionStatus, setSubmissionStatus]: [
+        AutoSubmitStatus,
+        Dispatch<SetStateAction<AutoSubmitStatus>>,
+    ] = useState<AutoSubmitStatus>("waiting");
+    const [submissionId, setSubmissionId]: [string | null, Dispatch<SetStateAction<string | null>>] =
+        useState<string | null>(null);
+    const submitting: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
+    const checking: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
+    const startRequest: ReturnType<typeof useRef<{ contestId: string; promise: Promise<void> } | null>> =
+        useRef<{ contestId: string; promise: Promise<void> } | null>(null);
+    const checkExpiredRef: ReturnType<typeof useRef<(() => Promise<void>) | null>> =
+        useRef<(() => Promise<void>) | null>(null);
     const contest: Contest | undefined = data.contests.find(
         (item): boolean => item.id === contestId,
     );
@@ -32,64 +54,142 @@ export function Attempt(): ReactNode {
     const group: Group | undefined = data.groups.find(
         (item: Group): boolean => item.id === exam?.groupId,
     );
+
+    async function submitAttempt(automatic: boolean): Promise<void> {
+        if (!contest || submitting.current) return;
+        submitting.current = true;
+        setSubmissionStatus("submitting");
+        setError("");
+        try {
+            await api.submit(contest.id, answers, automatic);
+        } catch (reason: unknown) {
+            setError(reason instanceof Error ? reason.message : "Không thể nộp bài.");
+            setSubmissionStatus("failed");
+            submitting.current = false;
+            return;
+        }
+
+        // Không báo lỗi nộp bài sau khi service đã xác nhận thành công.
+        try {
+            localStorage.removeItem(key);
+        } catch {
+            // Bản nháp cục bộ không ảnh hưởng đến kết quả đã nộp.
+        }
+        try {
+            await refresh();
+        } catch {
+            // Bài đã nộp; trang chi tiết sẽ tải lại kết quả khi có thể.
+        }
+        navigate(`/contests/${contest.id}`);
+    }
+
+    async function checkExpiredAttempt(): Promise<void> {
+        if (!contest || checking.current || submitting.current) return;
+        checking.current = true;
+        setSubmissionStatus("waiting");
+        setError("");
+        try {
+            const result: ExpiredAttemptResolution = await resolveExpiredAttempt(
+                api,
+                contest.id,
+                Boolean(hasDraft.current || startedHere.current),
+            );
+            if (result.state === "IN_PROGRESS") {
+                await submitAttempt(true);
+            } else if (result.state === "SUBMITTED") {
+                setSubmissionId(result.submissionId);
+                setSubmissionStatus("submitted");
+            } else if (result.state === "DRAFT_MISSING") {
+                setSubmissionStatus("draft_missing");
+            } else {
+                setSubmissionStatus("not_started");
+            }
+        } catch (reason: unknown) {
+            setError(reason instanceof Error ? reason.message : "Không thể kiểm tra lượt làm bài.");
+            setSubmissionStatus("failed");
+        } finally {
+            checking.current = false;
+        }
+    }
+
+    useLayoutEffect((): void => {
+        checkExpiredRef.current = checkExpiredAttempt;
+    });
+
     useEffect((): void => {
+        if (!contest || !exam || !group || !hasAccess(group) || exam.source === "PDF" ||
+            Date.now() < Date.parse(contest.startAt) || Date.now() >= Date.parse(contest.endAt)) return;
         try {
             localStorage.setItem(key, JSON.stringify(answers));
+            hasDraft.current = true;
         } catch {
             setError("Không thể lưu bản nháp trong trình duyệt.");
         }
-    }, [key, answers]);
-    // TODO: Đối chiếu lưu bản nháp, thời hạn và tự nộp với contract Contest/Submission; backend phải xử lý thời hạn.
+    }, [key, answers, contest?.id, contest?.startAt, contest?.endAt, exam?.id, exam?.source, group?.id, group?.role, group?.visibility]);
+    const canAttempt: boolean = Boolean(
+        contest && exam && group && hasAccess(group) && exam.source !== "PDF",
+    );
+
+    // TODO: Đối chiếu bắt đầu, bản nháp và tự nộp với contract Contest/Submission.
     useEffect((): (() => void) | undefined => {
-        if (!contest || !exam || !group || !hasAccess(group) || exam.source === "PDF") return undefined;
-        let timer: ReturnType<typeof setTimeout> | undefined;
+        if (!canAttempt || !contest || Date.now() < Date.parse(contest.startAt) ||
+            Date.now() >= Date.parse(contest.endAt)) return undefined;
         let cancelled: boolean = false;
-        async function schedule(): Promise<void> {
-            if (!contest) return;
-            try {
-                const remaining: number = Date.parse(contest.endAt) - Date.now();
-                if (remaining > 0) await api.startAttempt(contest.id);
-                if (cancelled) return;
-                timer = setTimeout((): void => {
-                    if (Date.now() < Date.parse(contest.endAt)) {
-                        void schedule();
-                        return;
-                    }
-                    void api.submit(contest.id, answers, true).then(async (): Promise<void> => {
-                        localStorage.removeItem(key);
-                        await refresh();
-                        navigate(`/contests/${contest.id}`);
-                    }).catch((reason: unknown): void => {
-                        setError(reason instanceof Error ? reason.message : "Không thể tự động nộp bài.");
-                    });
-                }, Math.max(0, Math.min(remaining, 2147483647)));
-            } catch (reason: unknown) {
-                if (!cancelled) setError(reason instanceof Error ? reason.message : "Không thể bắt đầu bài làm.");
-            }
+        if (startRequest.current?.contestId !== contest.id) {
+            startRequest.current = { contestId: contest.id, promise: api.startAttempt(contest.id) };
         }
-        void schedule();
-        return (): void => { cancelled = true; if (timer) clearTimeout(timer); };
-    }, [contest?.id, contest?.endAt, exam?.id, group?.id, answers, api, key, navigate]);
+        void startRequest.current.promise.then((): void => {
+            if (!cancelled) startedHere.current = true;
+        }).catch((reason: unknown): void => {
+            if (!cancelled) {
+                setError(reason instanceof Error ? reason.message : "Không thể bắt đầu bài làm.");
+                setSubmissionStatus("failed");
+            }
+        });
+        return (): void => { cancelled = true; };
+    }, [api, canAttempt, contest?.id, contest?.startAt, contest?.endAt]);
+
+    useEffect((): (() => void) | undefined => {
+        if (!canAttempt || !contest || Date.now() < Date.parse(contest.startAt)) return undefined;
+        let cancelled: boolean = false;
+        const stop: () => void = watchAttemptDeadline(contest.endAt, (): void => {
+            async function finish(): Promise<void> {
+                try {
+                    const request: { contestId: string; promise: Promise<void> } | null | undefined = startRequest.current;
+                    if (request && request.contestId === contest?.id) {
+                        await request.promise;
+                    }
+                    if (!cancelled) await checkExpiredRef.current?.();
+                } catch (reason: unknown) {
+                    if (!cancelled) {
+                        setError(reason instanceof Error ? reason.message : "Không thể bắt đầu bài làm.");
+                        setSubmissionStatus("failed");
+                    }
+                }
+            }
+            void finish();
+        });
+        return (): void => { cancelled = true; stop(); };
+    }, [canAttempt, contest?.id, contest?.startAt, contest?.endAt]);
     if (
         !contest ||
         !exam ||
         !group ||
         !hasAccess(group) ||
         exam.source === "PDF" ||
-        Date.now() < Date.parse(contest.startAt) ||
-        Date.now() >= Date.parse(contest.endAt)
+        Date.now() < Date.parse(contest.startAt)
     )
         return <p className="empty">Kỳ thi không khả dụng.</p>;
-    async function submit(): Promise<void> {
-        try {
-            if (!contest) return;
-            await api.submit(contest.id, answers);
-            localStorage.removeItem(key);
-            await refresh();
-            navigate(`/contests/${contest.id}`);
-        } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không nộp được bài.");
-        }
+    if (Date.now() >= Date.parse(contest.endAt)) {
+        return (
+            <ExpiredAttempt
+                contestId={contest.id}
+                status={submissionStatus}
+                error={error}
+                submissionId={submissionId}
+                onRetry={(): void => { void checkExpiredAttempt(); }}
+            />
+        );
     }
 
     function updateOption(question: Question, option: string, checked: boolean): void {
@@ -191,11 +291,12 @@ export function Attempt(): ReactNode {
                 <button
                     className="button primary attempt-submit"
                     type="button"
+                    disabled={submissionStatus === "submitting"}
                     onClick={(): void => {
-                        if (window.confirm("Nộp bài thử nghiệm?")) void submit();
+                        if (window.confirm("Nộp bài thử nghiệm?")) void submitAttempt(false);
                     }}
                 >
-                    Nộp bài thử nghiệm
+                    {submissionStatus === "submitting" ? "Đang nộp bài…" : "Nộp bài thử nghiệm"}
                 </button>
             </div>
         </div>
