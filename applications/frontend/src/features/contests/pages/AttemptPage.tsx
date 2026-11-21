@@ -69,16 +69,15 @@ export function Attempt(): ReactNode {
             return;
         }
 
-        // Không báo lỗi nộp bài sau khi service đã xác nhận thành công.
         try {
             localStorage.removeItem(key);
         } catch {
-            // Bản nháp cục bộ không ảnh hưởng đến kết quả đã nộp.
+            // Không ảnh hưởng đến bài đã nộp.
         }
         try {
             await refresh();
         } catch {
-            // Bài đã nộp; trang chi tiết sẽ tải lại kết quả khi có thể.
+            // Bài đã nộp; dữ liệu sẽ được tải lại sau.
         }
         navigate(`/contests/${contest.id}`);
     }

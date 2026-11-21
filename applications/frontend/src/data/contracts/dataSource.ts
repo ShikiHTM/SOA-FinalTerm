@@ -1,6 +1,5 @@
 import type { Assessment, Contest, Group, Snapshot } from "../../types";
 
-// Các hợp đồng này mô tả nhu cầu hiện tại của giao diện, không phải OpenAPI backend.
 // TODO: Đối chiếu ID, vai trò nhóm và quy trình thành viên với contract Group.
 export interface GroupDataSource {
     createGroup(group: Group): Promise<void>;

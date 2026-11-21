@@ -10,7 +10,6 @@ export class HttpError extends Error {
     }
 }
 
-/** HTTP cơ bản; adapter chịu trách nhiệm chọn endpoint, xác thực và xử lý dữ liệu. */
 export class HttpClient {
     private readonly baseUrl: URL;
     private readonly fetchRequest: typeof fetch;

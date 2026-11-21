@@ -59,7 +59,7 @@ function Application(): ReactNode {
         try {
             localStorage.setItem(THEME_KEY, theme);
         } catch {
-            // The theme still applies for the current session if browser storage is unavailable.
+            // Theme vẫn áp dụng trong phiên hiện tại khi không lưu được.
         }
     }, [theme]);
     function toggleTheme(): void {

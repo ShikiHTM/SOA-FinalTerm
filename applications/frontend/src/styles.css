@@ -3867,7 +3867,6 @@ textarea:focus-visible {
     }
 }
 
-/* Khu vực thử vai trò chỉ có trong chế độ mock. */
 .role-preview {
     display: flex;
     align-items: end;
@@ -3910,7 +3909,6 @@ textarea:focus-visible {
     }
 }
 
-/* Các nhà cung cấp đăng nhập sẽ được kết nối sau khi có contract. */
 .auth-providers {
     display: block;
     margin-top: 24px;

@@ -47,4 +47,7 @@ pnpm --filter @soa-final-term/frontend build
 | `src/data/contracts/` | Hợp đồng dữ liệu nội bộ frontend |
 | `src/data/mock/` | Dữ liệu và thao tác mô phỏng |
 | `src/data/http/` | HTTP client cơ bản cho adapter API tương lai |
+| `src/data/gateway/` | Khung ghép adapter và mẫu Notification; chưa kết nối Gateway |
+
+Các interface trong `data/contracts/` phản ánh nhu cầu frontend. Khi tích hợp, triển khai adapter cho từng nghiệp vụ theo OpenAPI đã xác nhận, cung cấp xác thực và session, rồi ghép qua `createGatewayServices`. `createNotificationAdapter` nhận cấu hình request từ bên ngoài; chưa quy định route Gateway. Chế độ `api` hiện vẫn bị chặn cho đến khi tích hợp hoàn chỉnh.
 

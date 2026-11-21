@@ -31,7 +31,6 @@ const browserClock: ContestClock = {
     },
 };
 
-/** Cập nhật giao diện khi đến mốc thời gian hoặc khi người dùng quay lại tab. */
 export function watchContestClock(
     startAt: string | undefined,
     endAt: string | undefined,

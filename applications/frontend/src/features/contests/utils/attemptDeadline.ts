@@ -30,7 +30,6 @@ export function watchAttemptDeadline(
         timer = clock.setTimer(schedule, Math.min(remaining, MAX_TIMER_DELAY));
     }
 
-    // Dùng timer ngay cả khi đã quá hạn để effect có thể được cleanup an toàn.
     timer = clock.setTimer(schedule, Math.max(0, Math.min(deadline - clock.now(), MAX_TIMER_DELAY)));
     return (): void => {
         if (timer !== undefined) clock.clearTimer(timer);

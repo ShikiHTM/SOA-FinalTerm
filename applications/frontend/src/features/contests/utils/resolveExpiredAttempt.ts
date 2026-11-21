@@ -2,7 +2,6 @@ import type { AttemptStatus, ContestDataSource } from "../../../data/contracts/d
 
 export type ExpiredAttemptResolution = AttemptStatus | { state: "DRAFT_MISSING" };
 
-/** Dữ liệu mock chỉ có thể nộp lượt đang làm nếu bản nháp còn trên thiết bị. */
 export async function resolveExpiredAttempt(
     api: Pick<ContestDataSource, "getAttemptStatus">,
     contestId: string,
