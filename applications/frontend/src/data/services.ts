@@ -1,19 +1,15 @@
 import type { AppServices } from "./contracts/services";
 import { createMockServices } from "./mock/services";
+import { createGatewayAdapter } from "./gateway/adapter";
+import { selectServices, type ServiceSelection } from "./selectServices";
 
-const selectedSource: string = import.meta.env.VITE_DATA_SOURCE || "mock";
-
-// TODO: Tạo và chọn adapter Gateway theo contract đã thống nhất; mock chỉ dùng tạm thời.
-export const dataSourceError: string = selectedSource === "mock"
-    ? ""
-    : selectedSource === "api"
-      ? "Chế độ API chưa được triển khai. Cần xác nhận contract và tích hợp Gateway trước khi sử dụng."
-      : `VITE_DATA_SOURCE không hợp lệ: ${selectedSource}. Hãy sử dụng mock hoặc api.`;
-
-let services: AppServices | undefined;
+const selection: ServiceSelection = selectServices(import.meta.env.VITE_DATA_SOURCE, {
+    mock: createMockServices,
+    api: (): AppServices => createGatewayAdapter(import.meta.env.VITE_API_BASE_URL),
+});
+export const dataSourceError: string = selection.error;
 
 export function getServices(): AppServices {
-    if (dataSourceError) throw new Error(dataSourceError);
-    services ??= createMockServices();
-    return services;
+    if (!selection.services) throw new Error(selection.error);
+    return selection.services;
 }
