@@ -594,11 +594,12 @@ Based on the **Domain Table** defined above, the system is decomposed into 6 ind
 
 |  | Stack |
 | :-- | :-- |
-| Frontend | React, Vite, Typescript |
+| Frontend | React, Vite, Typescript, Ky |
 | Backend & API Gateway | Go + Gin for Submission Service, Typescript + Hono for others |
 | Service Communication | Got, net/http for Go |
 | External Authentication | Google OAuth2 API, GitHub OAuth2 API |
 | Database | PostgreSQL |
+| ORM | MikroORM, GORM  |
 | Object Storage | AWS S3 |
 | Message Broker | Apache Kafka |
 | Observability | Prometheus, Grafana |
