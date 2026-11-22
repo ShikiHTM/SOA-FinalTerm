@@ -109,11 +109,42 @@ services:
     volumes:
       - assessment_data:/var/lib/postgresql
     environment:
-      - POSTGRES_USER=${ASSESSMENT_PGSQL_DB_USER}
-      - POSTGRES_PASSWORD=${ASSESSMENT_PGSQL_DB_PASSWORD}
-      - POSTGRES_DB=${ASSESSMENT_PGSQL_DB}
+      - POSTGRES_USER=${ASSESSMENT_DB_USER:-assessment_service}
+      - POSTGRES_PASSWORD=${ASSESSMENT_DB_PASSWORD:-assessment_service_dev}
+      - POSTGRES_DB=${ASSESSMENT_DB_NAME:-assessment_db}
     ports:
-      - 3033:5432
+      - 5003:5432
+
+  assessment_service:
+    build:
+      context: .
+      dockerfile: applications/assessment-service/Dockerfile
+    environment:
+      PORT: 8003
+      ASSESSMENT_DB_HOST: assessment_pgsql_db
+      ASSESSMENT_DB_PORT: 5432
+      ASSESSMENT_DB_USER: ${ASSESSMENT_DB_USER:-assessment_service}
+      ASSESSMENT_DB_PASSWORD: ${ASSESSMENT_DB_PASSWORD:-assessment_service_dev}
+      ASSESSMENT_DB_NAME: ${ASSESSMENT_DB_NAME:-assessment_db}
+      ASSESSMENT_DB_SYNC_SCHEMA: ${ASSESSMENT_DB_SYNC_SCHEMA:-true}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      GROUP_SERVICE_URL: http://group_service:8002
+      S3_REGION: ${S3_REGION:-ap-southeast-1}
+      S3_BUCKET: ${S3_BUCKET}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-false}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_PRESIGN_EXPIRES_IN_SECONDS: ${S3_PRESIGN_EXPIRES_IN_SECONDS:-900}
+      S3_MAX_PDF_BYTES: ${S3_MAX_PDF_BYTES:-20971520}
+      S3_AUTO_CREATE_BUCKET: ${S3_AUTO_CREATE_BUCKET:-false}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+    ports:
+      - 8003:8003
+    depends_on:
+      - assessment_pgsql_db
+    restart: on-failure
 
   swagger_ui:
     image: swaggerapi/swagger-ui:v5.34.0

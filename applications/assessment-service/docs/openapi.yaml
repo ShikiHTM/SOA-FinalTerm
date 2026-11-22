@@ -1,99 +1,791 @@
 openapi: 3.0.3
 info:
   title: Assessment Service API Contract
-  version: 1.0.0
+  version: 2.0.0
+  description: API for creating, publishing, accessing, favoriting, and moderating assessments and answer keys.
 
 servers:
-  - url: https://soa.shikii.dev/api/v1/internal
-  - url: http://localhost:3033/api/v1/internal
-    description: Test Serve
+  - url: http://localhost:8003
+    description: Local Dev Server
+  - url: http://assessment_service:8003
+    description: Docker Compose Internal Network
+
+tags:
+  - name: Assessments
+    description: Group assessment authoring, retrieval, content access, and answer key mapping.
+  - name: Favorites
+    description: Personal favorite assessment bookmarking.
+  - name: Admin
+    description: Platform administrator assessment search and moderation.
+  - name: Service
+    description: Internal assessment and grading data endpoints for sibling services.
+  - name: Observability
+    description: Service health status.
 
 components:
+  parameters:
+    XInternalSecret:
+      in: header
+      name: X-Internal-Secret
+      required: true
+      schema:
+        type: string
+      description: Shared secret for internal service authentication.
+
+    XUserId:
+      in: header
+      name: X-User-Id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Authenticated user ID.
+
+    XUserRole:
+      in: header
+      name: X-User-Role
+      required: true
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Authenticated user role.
+
+    AssessmentIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target assessment UUID.
+
+    PageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: 1-based page number.
+
+    LimitQuery:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Maximum number of items per page.
+
   schemas:
-    Assessment:
+    UserSystemRole:
+      type: string
+      enum: [USER, ADMIN]
+      description: System role of a user.
+
+    AssessmentType:
+      type: string
+      enum: [MULTI_CHOICE, ESSAY, HYBRID]
+      description: Overall assessment category.
+
+    AssessmentCreationMode:
+      type: string
+      enum: [DIRECT, PDF_IMPORT]
+      description: How the assessment content was created.
+
+    AssessmentContentFormat:
+      type: string
+      enum: [JSON, PDF]
+      description: Delivery format of the assessment questions.
+
+    AssessmentVisibility:
+      type: string
+      enum: [DRAFT, PRIVATE, PUBLIC]
+      description: Visibility scope of the assessment.
+
+    AssessmentStatus:
+      type: string
+      enum: [ACTIVE, HIDDEN]
+      description: Operational visibility status set by moderation.
+
+    QuestionType:
+      type: string
+      enum: [SINGLE_CHOICE, MULTIPLE_CHOICE, FILL_IN_THE_BLANK, ESSAY]
+      description: Question format.
+
+    PaginationMeta:
       type: object
+      required:
+        - page
+        - limit
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+
+    QuestionOption:
+      type: object
+      required:
+        - key
+        - text
+      properties:
+        key:
+          type: string
+          maxLength: 16
+        text:
+          type: string
+          maxLength: 1000
+
+    QuestionPublicItem:
+      type: object
+      required:
+        - id
+        - order
+        - question_type
+        - prompt
+        - points
+        - options
+      properties:
+        id:
+          type: string
+        order:
+          type: integer
+          minimum: 1
+        question_type:
+          $ref: '#/components/schemas/QuestionType'
+        prompt:
+          type: string
+        points:
+          type: number
+          minimum: 0
+        options:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/QuestionOption'
+
+    QuestionWithAnswer:
+      type: object
+      required:
+        - id
+        - order
+        - question_type
+        - prompt
+        - points
+      properties:
+        id:
+          type: string
+          maxLength: 100
+        order:
+          type: integer
+          minimum: 1
+        question_type:
+          $ref: '#/components/schemas/QuestionType'
+        prompt:
+          type: string
+        points:
+          type: number
+          minimum: 0
+        options:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/QuestionOption'
+        correct_answer:
+          nullable: true
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        grading_rubric:
+          type: string
+          nullable: true
+
+    AnswerKeyItem:
+      type: object
+      required:
+        - question_id
+        - question_type
+        - points
+      properties:
+        question_id:
+          type: string
+          maxLength: 100
+        question_type:
+          $ref: '#/components/schemas/QuestionType'
+        points:
+          type: number
+          minimum: 0
+        correct_answer:
+          nullable: true
+          oneOf:
+            - type: string
+            - type: array
+              items:
+                type: string
+        grading_rubric:
+          type: string
+          nullable: true
+
+    AnswerKeyDocument:
+      type: object
+      required:
+        - assessment_id
+        - version
+        - total_points
+        - answers
+        - updated_at
+      properties:
+        assessment_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        total_points:
+          type: number
+          minimum: 0
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerKeyItem'
+        updated_at:
+          type: string
+          format: date-time
+
+    AssessmentMetadata:
+      type: object
+      required:
+        - id
+        - group_id
+        - created_by
+        - title
+        - description
+        - assessment_type
+        - creation_mode
+        - content_format
+        - version
+        - question_count
+        - total_points
+        - has_essay_items
+        - has_answer_key
+        - is_practice_enabled
+        - visibility
+        - status
+        - created_at
+        - updated_at
       properties:
         id:
           type: string
           format: uuid
-          description: Assessment UUID.
-        title:
-          type: string
-          description: Name of the accessment.
-        type:
-          type: string
-          enum: [MULTI_CHOICE, ESSAY, HYBRID]
-          description: Type of the accessment.
-        status:
-          type: string
-          enum: [DRAFT, PRIVATE, PUBLIC]
-        content_url:
-          type: string
-          format: uri
-          description: URL to fetch raw file.
-        content_type:
-          type: string
-          enum: [application/pdf, application/json, application/yaml]
-          description: Format of the file at content_url.
         group_id:
           type: string
           format: uuid
-          description: Group that owns the assessment.
-        uploaded_by:
+        created_by:
           type: string
           format: uuid
-          description: ID of the user who uploaded the assessment.
+        title:
+          type: string
+        description:
+          type: string
+        assessment_type:
+          $ref: '#/components/schemas/AssessmentType'
+        creation_mode:
+          $ref: '#/components/schemas/AssessmentCreationMode'
+        content_format:
+          $ref: '#/components/schemas/AssessmentContentFormat'
+        version:
+          type: integer
+          minimum: 1
+        question_count:
+          type: integer
+          minimum: 0
+        total_points:
+          type: number
+          minimum: 0
+        has_essay_items:
+          type: boolean
+        has_answer_key:
+          type: boolean
+        is_practice_enabled:
+          type: boolean
+        visibility:
+          $ref: '#/components/schemas/AssessmentVisibility'
+        status:
+          $ref: '#/components/schemas/AssessmentStatus'
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
-        deleted_at:
+
+    PaginatedAssessmentList:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssessmentMetadata'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateDigitalAssessmentRequest:
+      type: object
+      required:
+        - title
+        - assessment_type
+        - group_id
+        - questions
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+          default: ""
+        assessment_type:
+          $ref: '#/components/schemas/AssessmentType'
+        group_id:
+          type: string
+          format: uuid
+        visibility:
+          $ref: '#/components/schemas/AssessmentVisibility'
+          default: DRAFT
+        is_practice_enabled:
+          type: boolean
+          default: false
+        questions:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/QuestionWithAnswer'
+
+    UpdateDigitalAssessmentRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+        assessment_type:
+          $ref: '#/components/schemas/AssessmentType'
+        visibility:
+          $ref: '#/components/schemas/AssessmentVisibility'
+        is_practice_enabled:
+          type: boolean
+        questions:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/QuestionWithAnswer'
+
+    UpsertAnswerKeyRequest:
+      type: object
+      required:
+        - answers
+      properties:
+        answers:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AnswerKeyItem'
+
+    AssessmentContentResponse:
+      type: object
+      required:
+        - assessment_id
+        - version
+        - content_format
+        - pdf_url
+        - pdf_url_expires_in_seconds
+        - questions
+      properties:
+        assessment_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        content_format:
+          $ref: '#/components/schemas/AssessmentContentFormat'
+        pdf_url:
+          type: string
+          format: uri
+          nullable: true
+          description: Short-lived download URL when content_format is PDF.
+        pdf_url_expires_in_seconds:
+          type: integer
+          nullable: true
+        questions:
+          type: array
+          nullable: true
+          items:
+            $ref: '#/components/schemas/QuestionPublicItem'
+          description: Public question list without answers when content_format is JSON.
+
+    FavoriteAssessmentItem:
+      type: object
+      required:
+        - favorited_at
+        - assessment
+      properties:
+        favorited_at:
           type: string
           format: date-time
-          nullable: true
-          description: Set when solf-deleted, otherwise null.
+        assessment:
+          $ref: '#/components/schemas/AssessmentMetadata'
+
+    PaginatedFavoriteAssessments:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FavoriteAssessmentItem'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    FavoriteActionResponse:
+      type: object
+      required:
+        - assessment_id
+        - favorited
+      properties:
+        assessment_id:
+          type: string
+          format: uuid
+        favorited:
+          type: boolean
+
+    InternalAssessmentSummary:
+      type: object
+      required:
+        - id
+        - group_id
+        - created_by
+        - assessment_type
+        - version
+        - question_count
+        - total_points
+        - has_essay_items
+        - has_answer_key
+        - is_practice_enabled
+        - visibility
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        created_by:
+          type: string
+          format: uuid
+        assessment_type:
+          $ref: '#/components/schemas/AssessmentType'
+        version:
+          type: integer
+          minimum: 1
+        question_count:
+          type: integer
+          minimum: 0
+        total_points:
+          type: number
+          minimum: 0
+        has_essay_items:
+          type: boolean
+        has_answer_key:
+          type: boolean
+        is_practice_enabled:
+          type: boolean
+        visibility:
+          $ref: '#/components/schemas/AssessmentVisibility'
+        status:
+          $ref: '#/components/schemas/AssessmentStatus'
+
+    InternalGradingDataResponse:
+      type: object
+      required:
+        - assessment_id
+        - group_id
+        - version
+        - assessment_type
+        - is_practice_enabled
+        - has_essay
+        - total_points
+        - answers
+      properties:
+        assessment_id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        version:
+          type: integer
+          minimum: 1
+        assessment_type:
+          $ref: '#/components/schemas/AssessmentType'
+        is_practice_enabled:
+          type: boolean
+        has_essay:
+          type: boolean
+        total_points:
+          type: number
+          minimum: 0
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnswerKeyItem'
+
+    AdminAssessmentRecord:
+      allOf:
+        - $ref: '#/components/schemas/AssessmentMetadata'
+        - type: object
+          required:
+            - moderation_reason
+            - moderated_by
+            - moderated_at
+          properties:
+            moderation_reason:
+              type: string
+              nullable: true
+            moderated_by:
+              type: string
+              format: uuid
+              nullable: true
+            moderated_at:
+              type: string
+              format: date-time
+              nullable: true
+
+    PaginatedAdminAssessments:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminAssessmentRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AdminUpdateAssessmentStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/AssessmentStatus'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Required when status is HIDDEN.
+
+    AdminDeleteAssessmentRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: assessment-service
+
+    ErrorResponse:
+      $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+
+  responses:
+    BadGateway:
+      description: '502 Bad Gateway - Upstream dependency or object storage request failed.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
 
 paths:
-  /assessments:
+  /health:
     get:
-      summary: Get assessments list from specific group
-      description: >
-        Fetches all available assessments associated with a given group ID. Access is strictly limited to authorized members of the group.
-
-      parameters:
-        - in: query
-          name: group_id
-          schema:
-            type: string
-          required: true
-
+      tags:
+        - Observability
+      summary: Check service health
+      description: Returns service health status.
       responses:
         '200':
-          description: A list of assessments.
+          description: Service is healthy.
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Assessment'
+                $ref: '#/components/schemas/HealthResponse'
 
+  /api/v1/internal/assessments/favorites:
+    get:
+      tags:
+        - Favorites
+      summary: List favorite assessments
+      description: Returns a paginated list of active assessments bookmarked by the authenticated user.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Favorite assessments retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFavoriteAssessments'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
 
+  /api/v1/internal/assessments:
+    get:
+      tags:
+        - Assessments
+      summary: List group assessments
+      description: Returns paginated assessments belonging to a group filtered by caller access level and optional visibility or practice filters.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - in: query
+          name: group_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Owning group UUID.
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            $ref: '#/components/schemas/AssessmentVisibility'
+        - in: query
+          name: is_practice_enabled
+          required: false
+          schema:
+            type: boolean
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Group assessments retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssessmentList'
         '400':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
         '403':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
         '404':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
         '500':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
-      deprecated: false
 
     post:
-      summary: Create a new assessment
-      description: >
-        Uploads an assessment file (PDF/JSON/YAML) to S3 and creates its metadata record.
+      tags:
+        - Assessments
+      summary: Create digital assessment
+      description: Creates a structured assessment from JSON questions and answer keys on behalf of a group manager.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDigitalAssessmentRequest'
+      responses:
+        '201':
+          description: Assessment created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentMetadata'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/assessments/pdf:
+    post:
+      tags:
+        - Assessments
+      summary: Create PDF assessment
+      description: Uploads a validated PDF exam file with optional serialized answer keys on behalf of a group manager.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
       requestBody:
         required: true
         content:
@@ -102,126 +794,518 @@ paths:
               type: object
               required:
                 - title
-                - type
+                - assessment_type
                 - group_id
                 - file
               properties:
                 title:
                   type: string
-                  description: Name of the assessment.
-                type:
+                description:
                   type: string
-                  enum: [MULTI_CHOICE, ESSAY, HYBRID]
-                  description: Type of the assessment.
-                status:
-                  type: string
-                  enum: [DRAFT, PRIVATE, PUBLIC]
-                  default: DRAFT
-                  description: Optional initial visibility status (defaults to DRAFT).
+                  default: ""
+                assessment_type:
+                  $ref: '#/components/schemas/AssessmentType'
                 group_id:
                   type: string
                   format: uuid
-                  description: Group that owns the assessment.
+                visibility:
+                  $ref: '#/components/schemas/AssessmentVisibility'
+                  default: DRAFT
+                is_practice_enabled:
+                  type: string
+                  enum: ["true", "false"]
+                  default: "false"
                 file:
                   type: string
                   format: binary
-                  description: Assessment raw file (PDF, JSON, or YAML) to upload to S3.
+                answers:
+                  type: string
+                  description: Optional JSON-serialized answer key array.
       responses:
         '201':
-          description: Assessment successfully created.
+          description: PDF assessment created.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Assessment'
+                $ref: '#/components/schemas/AssessmentMetadata'
         '400':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
         '403':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
         '404':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
         '500':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
 
-  /assessments/{id}:
+  /api/v1/internal/assessments/{id}:
     get:
-      summary: Get specific assessment.
-      description: >
-          Fetches specific assessment by id. Access is strictly limited to authorized members of the group.
+      tags:
+        - Assessments
+      summary: Get assessment metadata
+      description: Returns metadata for an assessment by ID when accessible to the caller.
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          required: true
-          description: assessment id
-
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
       responses:
         '200':
-          description: assessment with specific id.
+          description: Assessment metadata retrieved.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Assessment'
+                $ref: '#/components/schemas/AssessmentMetadata'
         '400':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
         '403':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
         '404':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
         '500':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
-      deprecated: false
 
     put:
-      summary: Adjusts specific assessments information.
-
+      tags:
+        - Assessments
+      summary: Update assessment metadata or content
+      description: Updates metadata, structured JSON questions, or replaces the uploaded PDF document on behalf of a group manager.
       parameters:
-        - in: path
-          name: id
-          schema:
-            type: string
-          required: true
-          description: assessment id
-
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
       requestBody:
-        description: Assessment components to be adjusted.
         required: true
         content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDigitalAssessmentRequest'
           multipart/form-data:
             schema:
               type: object
-              minProperties: 1
               properties:
                 title:
                   type: string
-                  description: Name of the assessment.
-                type:
+                description:
                   type: string
-                  enum: [MULTI_CHOICE, ESSAY, HYBRID]
-                  description: Type of the assessment.
-                status:
+                assessment_type:
+                  $ref: '#/components/schemas/AssessmentType'
+                visibility:
+                  $ref: '#/components/schemas/AssessmentVisibility'
+                is_practice_enabled:
                   type: string
-                  enum: [DRAFT, PRIVATE, PUBLIC]
-                  description: Visibility status of the assessment.
+                  enum: ["true", "false"]
                 file:
                   type: string
                   format: binary
-                  description: Optional new file to upload to S3.
-
       responses:
         '200':
-          description: Assessment successfully updated.
+          description: Assessment updated.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Assessment'
-
+                $ref: '#/components/schemas/AssessmentMetadata'
         '400':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Assessments
+      summary: Delete assessment
+      description: Removes an assessment on behalf of an authorized group manager or administrator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '204':
+          description: Assessment deleted.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
         '403':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
         '404':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
         '500':
           $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
-      deprecated: false
+
+  /api/v1/internal/assessments/{id}/content:
+    get:
+      tags:
+        - Assessments
+      summary: Get public assessment content
+      description: Returns public questions without answer keys or a temporary PDF download URL for authorized callers.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '200':
+          description: Public content retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssessmentContentResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/assessments/{id}/answer-key:
+    get:
+      tags:
+        - Assessments
+      summary: Get assessment answer key
+      description: Retrieves the assessment answer key for authorized group managers or system administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '200':
+          description: Answer key retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerKeyDocument'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    put:
+      tags:
+        - Assessments
+      summary: Map or update answer key
+      description: Saves a new versioned answer key for the assessment on behalf of a group manager or administrator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertAnswerKeyRequest'
+      responses:
+        '200':
+          description: Answer key updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnswerKeyDocument'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/assessments/{id}/favorite:
+    post:
+      tags:
+        - Favorites
+      summary: Mark assessment as favorite
+      description: Bookmarks an accessible assessment in the authenticated user's favorites list.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '200':
+          description: Assessment bookmarked.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoriteActionResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Favorites
+      summary: Unmark favorite assessment
+      description: Removes an assessment from the authenticated user's favorites list.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '200':
+          description: Favorite removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FavoriteActionResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/assessments/{id}/summary:
+    get:
+      tags:
+        - Service
+      summary: Get internal assessment summary
+      description: Returns assessment ownership, version, format, and visibility metadata for sibling services.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '200':
+          description: Assessment summary retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalAssessmentSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/assessments/{id}/grading-data:
+    get:
+      tags:
+        - Service
+      summary: Get grading data and answer key
+      description: Returns expected answer keys and essay presence flag for a given assessment or specific version.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+        - in: query
+          name: version
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+          description: Optional historical version number to retrieve.
+      responses:
+        '200':
+          description: Grading data retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalGradingDataResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/assessments:
+    get:
+      tags:
+        - Admin
+      summary: List all assessments
+      description: Returns a paginated, searchable, and filterable list of assessments for administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/AssessmentStatus'
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            $ref: '#/components/schemas/AssessmentVisibility'
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+      responses:
+        '200':
+          description: Admin assessment list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminAssessments'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/assessments/{id}:
+    get:
+      tags:
+        - Admin
+      summary: Get admin assessment details
+      description: Returns full assessment metadata and moderation status for administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      responses:
+        '200':
+          description: Assessment details retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAssessmentRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Admin
+      summary: Moderate delete assessment
+      description: Marks an assessment as deleted on behalf of a platform administrator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDeleteAssessmentRequest'
+      responses:
+        '204':
+          description: Assessment deleted.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/assessments/{id}/status:
+    patch:
+      tags:
+        - Admin
+      summary: Hide or restore assessment
+      description: Updates an assessment's operational status between active and hidden when invoked by an administrator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AssessmentIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateAssessmentStatusRequest'
+      responses:
+        '200':
+          description: Assessment status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminAssessmentRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'

@@ -1,12 +1,22 @@
 {
-  "name": "@soa-final-term/assessment-service",
-  "version": "0.0.1",
-  "private": true,
-  "dependencies": {
-    "@hono/node-server": "^2.1.8",
-    "@mikro-orm/postgresql": "^7.2.8",
-    "got": "^16.2.0",
-    "hono": "^4.13.17",
-    "uuid": "^14.0.3"
-  }
+    "name": "@soa-final-term/assessment-service",
+    "version": "0.0.1",
+    "private": true,
+    "scripts": {
+        "lint": "eslint .",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "build": "rolldown -c rolldown.config.ts",
+        "test": "tsx --test tests/assessments.test.ts"
+    },
+    "dependencies": {
+        "@aws-sdk/client-s3": "^3.800.0",
+        "@aws-sdk/s3-request-presigner": "^3.800.0",
+        "@hono/node-server": "^2.1.8",
+        "@hono/zod-validator": "^0.4.3",
+        "@mikro-orm/postgresql": "^7.2.8",
+        "got": "^16.2.0",
+        "hono": "^4.13.17",
+        "uuid": "^14.0.3",
+        "zod": "^3.24.2"
+    }
 }
