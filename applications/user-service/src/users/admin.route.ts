@@ -6,24 +6,21 @@ import {
     requireAdminRole,
     requireAuthenticatedHeaders
 } from "../shared/middleware";
-import type { AppEnv } from "../shared/types";
+import type { AppEnv, PaginatedResult, UserSystemRole } from "../shared/types";
 import {
-    AdminListUsersQuerySchema,
+    IdParamSchema,
+    ListUsersQuerySchema,
     UpdateUserRoleSchema,
     UpdateUserStatusSchema,
-    UserIdParamSchema,
-    type AdminListUsersQueryDto,
-    type UpdateUserRoleDto,
-    type UpdateUserStatusDto,
-    type UserIdParamDto
+    type ListUsersQuery,
+    type UpdateUserStatusDto
 } from "./schemas/user.schema";
 import {
     getUserForAdmin,
     listUsersForAdmin,
     updateUserRole,
     updateUserStatus,
-    type AdminUserRecord,
-    type PaginatedAdminUsers
+    type AdminUserRecord
 } from "./user.admin";
 
 function getAdminUserId(c: Context<AppEnv>): string {
@@ -42,20 +39,20 @@ export function createAdminRoute(): Hono<AppEnv> {
 
     router.get(
         "/",
-        createZodValidator("query", AdminListUsersQuerySchema),
+        createZodValidator("query", ListUsersQuerySchema),
         async (c): Promise<Response> => {
-            const query: AdminListUsersQueryDto = c.req.valid("query");
+            const query: ListUsersQuery = c.req.valid("query");
             const em: EntityManager = c.get("em");
-            const result: PaginatedAdminUsers = await listUsersForAdmin(query, em);
+            const result: PaginatedResult<AdminUserRecord> = await listUsersForAdmin(query, em);
             return c.json(result, 200);
         }
     );
 
     router.get(
         "/:id",
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
-            const params: UserIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const user: AdminUserRecord = await getUserForAdmin(params.id, em);
             return c.json(user, 200);
@@ -64,11 +61,11 @@ export function createAdminRoute(): Hono<AppEnv> {
 
     router.patch(
         "/:id/status",
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("json", UpdateUserStatusSchema),
         async (c): Promise<Response> => {
             const adminUserId: string = getAdminUserId(c);
-            const params: UserIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const payload: UpdateUserStatusDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const user: AdminUserRecord = await updateUserStatus(params.id, adminUserId, payload, em);
@@ -78,14 +75,19 @@ export function createAdminRoute(): Hono<AppEnv> {
 
     router.patch(
         "/:id/role",
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("json", UpdateUserRoleSchema),
         async (c): Promise<Response> => {
             const adminUserId: string = getAdminUserId(c);
-            const params: UserIdParamDto = c.req.valid("param");
-            const payload: UpdateUserRoleDto = c.req.valid("json");
+            const params: { id: string } = c.req.valid("param");
+            const payload: { system_role: UserSystemRole } = c.req.valid("json");
             const em: EntityManager = c.get("em");
-            const user: AdminUserRecord = await updateUserRole(params.id, adminUserId, payload, em);
+            const user: AdminUserRecord = await updateUserRole(
+                params.id,
+                adminUserId,
+                payload.system_role,
+                em
+            );
             return c.json(user, 200);
         }
     );

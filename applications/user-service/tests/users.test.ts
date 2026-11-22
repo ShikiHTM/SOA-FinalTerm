@@ -17,10 +17,11 @@ import {
     UserStatus,
     UserSystemRole,
     type AuthResponse,
+    type PaginatedResult,
     type PaginationMeta
 } from "../src/shared/types";
-import type { AdminUserRecord, PaginatedAdminUsers } from "../src/users/user.admin";
-import type { FollowActionResponse, PaginatedFollowList } from "../src/users/user.follow";
+import type { AdminUserRecord } from "../src/users/user.admin";
+import type { FollowActionResponse, UserFollowItem } from "../src/users/user.follow";
 import type {
     InternalUserSummary,
     OwnUserProfile,
@@ -755,8 +756,8 @@ describe("user-service users profile, follow, admin, and batch routes", (): void
             }
         );
         assert.equal(followersRes.status, 200);
-        const followersPage: PaginatedFollowList =
-            (await followersRes.json()) as PaginatedFollowList;
+        const followersPage: PaginatedResult<UserFollowItem> =
+            (await followersRes.json()) as PaginatedResult<UserFollowItem>;
         assert.equal(followersPage.items.length, 1);
         assert.deepEqual(followersPage.pagination, {
             page: 1,
@@ -869,7 +870,8 @@ describe("user-service users profile, follow, admin, and batch routes", (): void
             }
         );
         assert.equal(searchRes.status, 200);
-        const searchBody: PaginatedAdminUsers = (await searchRes.json()) as PaginatedAdminUsers;
+        const searchBody: PaginatedResult<AdminUserRecord> =
+            (await searchRes.json()) as PaginatedResult<AdminUserRecord>;
         assert.equal(searchBody.items.length, 1);
         assert.equal(searchBody.items[0].id, targetAuth.user.id);
 

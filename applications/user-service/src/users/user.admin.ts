@@ -1,24 +1,18 @@
 import type { EntityManager, FilterQuery } from "@mikro-orm/postgresql";
-import { revokeAllUserTokens } from "../auth/auth.token";
+import { revokeAllUserTokens, toAuthUserSummary } from "../auth/auth.token";
 import { UserSchema, type UserEntity } from "../db/entities/user.entity";
 import { AppError } from "../shared/errors";
-import { UserStatus, UserSystemRole, type PaginationMeta } from "../shared/types";
-import type {
-    AdminListUsersQueryDto,
-    UpdateUserRoleDto,
-    UpdateUserStatusDto
-} from "./schemas/user.schema";
+import {
+    UserStatus,
+    UserSystemRole,
+    type AuthUserSummary,
+    type PaginatedResult
+} from "../shared/types";
+import type { ListUsersQuery, UpdateUserStatusDto } from "./schemas/user.schema";
 import { buildPaginationMeta, findUserByIdOrThrow } from "./user.profile";
 
-export interface AdminUserRecord {
-    id: string;
-    email: string;
-    username: string;
-    display_name: string;
+export interface AdminUserRecord extends AuthUserSummary {
     bio: string | null;
-    avatar_url: string | null;
-    system_role: UserSystemRole;
-    status: UserStatus;
     moderation_reason: string | null;
     moderated_by: string | null;
     moderated_at: string | null;
@@ -26,21 +20,10 @@ export interface AdminUserRecord {
     updated_at: string;
 }
 
-export interface PaginatedAdminUsers {
-    items: AdminUserRecord[];
-    pagination: PaginationMeta;
-}
-
 function toAdminUserRecord(user: UserEntity): AdminUserRecord {
     return {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        display_name: user.displayName,
+        ...toAuthUserSummary(user),
         bio: user.bio ?? null,
-        avatar_url: user.avatarUrl ?? null,
-        system_role: user.systemRole,
-        status: user.status,
         moderation_reason: user.moderationReason ?? null,
         moderated_by: user.moderatedBy ?? null,
         moderated_at: user.moderatedAt ? user.moderatedAt.toISOString() : null,
@@ -50,9 +33,9 @@ function toAdminUserRecord(user: UserEntity): AdminUserRecord {
 }
 
 export async function listUsersForAdmin(
-    query: AdminListUsersQueryDto,
+    query: ListUsersQuery,
     em: EntityManager
-): Promise<PaginatedAdminUsers> {
+): Promise<PaginatedResult<AdminUserRecord>> {
     const where: FilterQuery<UserEntity> = {
         deletedAt: null
     };
@@ -123,7 +106,7 @@ export async function updateUserStatus(
 export async function updateUserRole(
     targetUserId: string,
     adminUserId: string,
-    payload: UpdateUserRoleDto,
+    systemRole: UserSystemRole,
     em: EntityManager
 ): Promise<AdminUserRecord> {
     if (targetUserId === adminUserId) {
@@ -133,7 +116,7 @@ export async function updateUserRole(
         );
     }
     const user: UserEntity = await findUserByIdOrThrow(targetUserId, em);
-    user.systemRole = payload.system_role;
+    user.systemRole = systemRole;
     user.updatedAt = new Date();
     await em.flush();
     await revokeAllUserTokens(user.id, em);

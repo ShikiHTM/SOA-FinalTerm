@@ -2,8 +2,8 @@ import type { EntityManager } from "@mikro-orm/postgresql";
 import { UserFollowSchema, type UserFollowEntity } from "../db/entities/user-follow.entity";
 import type { UserEntity } from "../db/entities/user.entity";
 import { AppError } from "../shared/errors";
-import { UserStatus, UserSystemRole, type PaginationMeta } from "../shared/types";
-import type { PaginationQueryDto } from "./schemas/user.schema";
+import { UserStatus, UserSystemRole, type PaginatedResult } from "../shared/types";
+import type { PaginationQuery } from "./schemas/user.schema";
 import {
     buildPaginationMeta,
     findUserByIdOrThrow,
@@ -22,11 +22,6 @@ export interface UserFollowItem {
     display_name: string;
     avatar_url: string | null;
     followed_at: string;
-}
-
-export interface PaginatedFollowList {
-    items: UserFollowItem[];
-    pagination: PaginationMeta;
 }
 
 export async function followUser(
@@ -87,9 +82,9 @@ async function listFollowRelation(
     direction: "followers" | "following",
     viewerId: string | undefined,
     viewerRole: UserSystemRole | undefined,
-    query: PaginationQueryDto,
+    query: PaginationQuery,
     em: EntityManager
-): Promise<PaginatedFollowList> {
+): Promise<PaginatedResult<UserFollowItem>> {
     const target: UserEntity = await findUserByIdOrThrow(targetUserId, em);
     const privacy: PrivacySettings = normalizePrivacySettings(target.privacySettings);
     const isOwnerOrAdmin: boolean =
@@ -145,9 +140,9 @@ export async function listFollowers(
     targetUserId: string,
     viewerId: string | undefined,
     viewerRole: UserSystemRole | undefined,
-    query: PaginationQueryDto,
+    query: PaginationQuery,
     em: EntityManager
-): Promise<PaginatedFollowList> {
+): Promise<PaginatedResult<UserFollowItem>> {
     return listFollowRelation(targetUserId, "followers", viewerId, viewerRole, query, em);
 }
 
@@ -155,8 +150,8 @@ export async function listFollowing(
     targetUserId: string,
     viewerId: string | undefined,
     viewerRole: UserSystemRole | undefined,
-    query: PaginationQueryDto,
+    query: PaginationQuery,
     em: EntityManager
-): Promise<PaginatedFollowList> {
+): Promise<PaginatedResult<UserFollowItem>> {
     return listFollowRelation(targetUserId, "following", viewerId, viewerRole, query, em);
 }

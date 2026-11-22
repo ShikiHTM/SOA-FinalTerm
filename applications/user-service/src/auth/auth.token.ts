@@ -11,11 +11,24 @@ import {
     UserStatus,
     UserSystemRole,
     type AuthResponse,
+    type AuthUserSummary,
     type JwtTokenPayload,
     type VerifiedTokenResult
 } from "../shared/types";
 
 export const BCRYPT_SALT_ROUNDS: number = 12;
+
+export function toAuthUserSummary(user: UserEntity): AuthUserSummary {
+    return {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        display_name: user.displayName,
+        avatar_url: user.avatarUrl ?? null,
+        system_role: user.systemRole,
+        status: user.status
+    };
+}
 
 export async function hashPassword(plainPassword: string): Promise<string> {
     return bcrypt.hash(plainPassword, BCRYPT_SALT_ROUNDS);
@@ -62,15 +75,7 @@ export async function issueAuthResponse(
         token,
         token_type: "Bearer",
         expires_at: expiresAt.toISOString(),
-        user: {
-            id: user.id,
-            email: user.email,
-            username: user.username,
-            display_name: user.displayName,
-            avatar_url: user.avatarUrl ?? null,
-            system_role: user.systemRole,
-            status: user.status
-        }
+        user: toAuthUserSummary(user)
     };
 }
 

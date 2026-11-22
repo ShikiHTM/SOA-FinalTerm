@@ -66,3 +66,8 @@ export interface PaginationMeta {
     total: number;
     total_pages: number;
 }
+
+export interface PaginatedResult<T> {
+    items: T[];
+    pagination: PaginationMeta;
+}

@@ -44,4 +44,3 @@ export const VerifyTokenRequestSchema = z.object({
 export type LoginRequestDto = z.infer<typeof LoginRequestSchema>;
 export type RegisterRequestDto = z.infer<typeof RegisterRequestSchema>;
 export type OAuthLoginRequestDto = z.infer<typeof OAuthLoginRequestSchema>;
-export type VerifyTokenRequestDto = z.infer<typeof VerifyTokenRequestSchema>;

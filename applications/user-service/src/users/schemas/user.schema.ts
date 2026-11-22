@@ -1,27 +1,22 @@
 import { z } from "zod";
 import { UserStatus, UserSystemRole } from "../../shared/types";
 
-export const UserIdParamSchema = z.object({
+const UsernameField = z
+    .string()
+    .trim()
+    .min(3, "Username must be at least 3 characters.")
+    .max(64, "Username must not exceed 64 characters.")
+    .regex(
+        /^[a-zA-Z0-9_.-]+$/,
+        "Username may only contain letters, numbers, dots, underscores, and hyphens."
+    );
+
+export const IdParamSchema = z.object({
     id: z.string().uuid("User ID must be a valid UUID.")
 });
 
 export const UsernameParamSchema = z.object({
-    username: z
-        .string()
-        .trim()
-        .min(3, "Username must be at least 3 characters.")
-        .max(64, "Username must not exceed 64 characters.")
-        .regex(
-            /^[a-zA-Z0-9_.-]+$/,
-            "Username may only contain letters, numbers, dots, underscores, and hyphens."
-        )
-});
-
-const PrivacySettingsPatchSchema = z.object({
-    show_email: z.boolean().optional(),
-    show_bio: z.boolean().optional(),
-    show_followers: z.boolean().optional(),
-    show_following: z.boolean().optional()
+    username: UsernameField
 });
 
 export const UpdateProfileSchema = z
@@ -32,16 +27,7 @@ export const UpdateProfileSchema = z
             .min(1, "Display name cannot be empty.")
             .max(120, "Display name must not exceed 120 characters.")
             .optional(),
-        username: z
-            .string()
-            .trim()
-            .min(3, "Username must be at least 3 characters.")
-            .max(64, "Username must not exceed 64 characters.")
-            .regex(
-                /^[a-zA-Z0-9_.-]+$/,
-                "Username may only contain letters, numbers, dots, underscores, and hyphens."
-            )
-            .optional(),
+        username: UsernameField.optional(),
         bio: z
             .string()
             .trim()
@@ -54,15 +40,18 @@ export const UpdateProfileSchema = z
             .max(2048, "Avatar URL must not exceed 2048 characters.")
             .nullable()
             .optional(),
-        privacy_settings: PrivacySettingsPatchSchema.optional()
+        privacy_settings: z
+            .object({
+                show_email: z.boolean().optional(),
+                show_bio: z.boolean().optional(),
+                show_followers: z.boolean().optional(),
+                show_following: z.boolean().optional()
+            })
+            .optional()
     })
     .refine(
         (data): boolean =>
-            data.display_name !== undefined ||
-            data.username !== undefined ||
-            data.bio !== undefined ||
-            data.avatar_url !== undefined ||
-            data.privacy_settings !== undefined,
+            Object.values(data).some((value: unknown): boolean => value !== undefined),
         {
             message: "At least one field must be provided for update."
         }
@@ -84,7 +73,7 @@ export const PaginationQuerySchema = z.object({
     limit: z.coerce.number().int().min(1).max(100).default(20)
 });
 
-export const AdminListUsersQuerySchema = PaginationQuerySchema.extend({
+export const ListUsersQuerySchema = PaginationQuerySchema.extend({
     search: z.string().trim().max(120).optional(),
     status: z.nativeEnum(UserStatus).optional(),
     role: z.nativeEnum(UserSystemRole).optional()
@@ -112,19 +101,15 @@ export const UpdateUserRoleSchema = z.object({
     system_role: z.nativeEnum(UserSystemRole)
 });
 
-export const BatchUsersRequestSchema = z.object({
+export const BatchUsersSchema = z.object({
     user_ids: z
         .array(z.string().uuid("Each user ID must be a valid UUID."))
         .min(1, "At least one user ID is required.")
         .max(100, "At most 100 user IDs are allowed.")
 });
 
-export type UserIdParamDto = z.infer<typeof UserIdParamSchema>;
-export type UsernameParamDto = z.infer<typeof UsernameParamSchema>;
+export type PaginationQuery = z.infer<typeof PaginationQuerySchema>;
+export type ListUsersQuery = z.infer<typeof ListUsersQuerySchema>;
 export type UpdateProfileDto = z.infer<typeof UpdateProfileSchema>;
 export type ChangePasswordDto = z.infer<typeof ChangePasswordSchema>;
-export type PaginationQueryDto = z.infer<typeof PaginationQuerySchema>;
-export type AdminListUsersQueryDto = z.infer<typeof AdminListUsersQuerySchema>;
 export type UpdateUserStatusDto = z.infer<typeof UpdateUserStatusSchema>;
-export type UpdateUserRoleDto = z.infer<typeof UpdateUserRoleSchema>;
-export type BatchUsersRequestDto = z.infer<typeof BatchUsersRequestSchema>;

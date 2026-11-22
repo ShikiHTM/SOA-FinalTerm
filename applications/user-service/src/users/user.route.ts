@@ -6,20 +6,17 @@ import {
     optionalAuthenticatedHeaders,
     requireAuthenticatedHeaders
 } from "../shared/middleware";
-import type { AppEnv, UserSystemRole } from "../shared/types";
+import type { AppEnv, PaginatedResult, UserSystemRole } from "../shared/types";
 import {
-    BatchUsersRequestSchema,
+    BatchUsersSchema,
     ChangePasswordSchema,
+    IdParamSchema,
     PaginationQuerySchema,
     UpdateProfileSchema,
-    UserIdParamSchema,
     UsernameParamSchema,
-    type BatchUsersRequestDto,
     type ChangePasswordDto,
-    type PaginationQueryDto,
-    type UpdateProfileDto,
-    type UserIdParamDto,
-    type UsernameParamDto
+    type PaginationQuery,
+    type UpdateProfileDto
 } from "./schemas/user.schema";
 import {
     followUser,
@@ -27,7 +24,7 @@ import {
     listFollowing,
     unfollowUser,
     type FollowActionResponse,
-    type PaginatedFollowList
+    type UserFollowItem
 } from "./user.follow";
 import {
     changeOwnPassword,
@@ -87,9 +84,9 @@ export function createUserRoute(): Hono<AppEnv> {
 
     router.post(
         "/batch",
-        createZodValidator("json", BatchUsersRequestSchema),
+        createZodValidator("json", BatchUsersSchema),
         async (c): Promise<Response> => {
-            const payload: BatchUsersRequestDto = c.req.valid("json");
+            const payload: { user_ids: string[] } = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const users: InternalUserSummary[] = await getUsersBatch(payload.user_ids, em);
             return c.json({ users }, 200);
@@ -101,7 +98,7 @@ export function createUserRoute(): Hono<AppEnv> {
         optionalAuthenticatedHeaders,
         createZodValidator("param", UsernameParamSchema),
         async (c): Promise<Response> => {
-            const params: UsernameParamDto = c.req.valid("param");
+            const params: { username: string } = c.req.valid("param");
             const viewerId: string | undefined = c.get("userId");
             const em: EntityManager = c.get("em");
             const profile: PublicUserProfile = await getPublicProfileByUsername(
@@ -116,9 +113,9 @@ export function createUserRoute(): Hono<AppEnv> {
     router.get(
         "/:id",
         optionalAuthenticatedHeaders,
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
-            const params: UserIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const viewerId: string | undefined = c.get("userId");
             const em: EntityManager = c.get("em");
             const profile: PublicUserProfile = await getPublicProfileById(params.id, viewerId, em);
@@ -129,10 +126,10 @@ export function createUserRoute(): Hono<AppEnv> {
     router.post(
         "/:id/follow",
         requireAuthenticatedHeaders,
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const followerId: string = getAuthenticatedUserId(c);
-            const params: UserIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const result: FollowActionResponse = await followUser(followerId, params.id, em);
             return c.json(result, 200);
@@ -142,10 +139,10 @@ export function createUserRoute(): Hono<AppEnv> {
     router.delete(
         "/:id/follow",
         requireAuthenticatedHeaders,
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const followerId: string = getAuthenticatedUserId(c);
-            const params: UserIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const result: FollowActionResponse = await unfollowUser(followerId, params.id, em);
             return c.json(result, 200);
@@ -155,15 +152,15 @@ export function createUserRoute(): Hono<AppEnv> {
     router.get(
         "/:id/followers",
         optionalAuthenticatedHeaders,
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("query", PaginationQuerySchema),
         async (c): Promise<Response> => {
-            const params: UserIdParamDto = c.req.valid("param");
-            const query: PaginationQueryDto = c.req.valid("query");
+            const params: { id: string } = c.req.valid("param");
+            const query: PaginationQuery = c.req.valid("query");
             const viewerId: string | undefined = c.get("userId");
             const viewerRole: UserSystemRole | undefined = c.get("userRole");
             const em: EntityManager = c.get("em");
-            const result: PaginatedFollowList = await listFollowers(
+            const result: PaginatedResult<UserFollowItem> = await listFollowers(
                 params.id,
                 viewerId,
                 viewerRole,
@@ -177,15 +174,15 @@ export function createUserRoute(): Hono<AppEnv> {
     router.get(
         "/:id/following",
         optionalAuthenticatedHeaders,
-        createZodValidator("param", UserIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("query", PaginationQuerySchema),
         async (c): Promise<Response> => {
-            const params: UserIdParamDto = c.req.valid("param");
-            const query: PaginationQueryDto = c.req.valid("query");
+            const params: { id: string } = c.req.valid("param");
+            const query: PaginationQuery = c.req.valid("query");
             const viewerId: string | undefined = c.get("userId");
             const viewerRole: UserSystemRole | undefined = c.get("userRole");
             const em: EntityManager = c.get("em");
-            const result: PaginatedFollowList = await listFollowing(
+            const result: PaginatedResult<UserFollowItem> = await listFollowing(
                 params.id,
                 viewerId,
                 viewerRole,

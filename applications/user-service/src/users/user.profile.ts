@@ -1,5 +1,5 @@
 import type { EntityManager } from "@mikro-orm/postgresql";
-import { hashPassword, verifyPassword } from "../auth/auth.token";
+import { hashPassword, toAuthUserSummary, verifyPassword } from "../auth/auth.token";
 import { UserFollowSchema, type UserFollowEntity } from "../db/entities/user-follow.entity";
 import {
     UserOAuthAccountSchema,
@@ -10,7 +10,7 @@ import { AppError } from "../shared/errors";
 import {
     OAuthProvider,
     UserStatus,
-    UserSystemRole,
+    type AuthUserSummary,
     type PaginationMeta
 } from "../shared/types";
 import type { ChangePasswordDto, UpdateProfileDto } from "./schemas/user.schema";
@@ -22,18 +22,11 @@ export interface PrivacySettings {
     show_following: boolean;
 }
 
-export interface OwnUserProfile {
-    id: string;
-    email: string;
-    username: string;
-    display_name: string;
+export interface OwnUserProfile extends AuthUserSummary {
     bio: string | null;
-    avatar_url: string | null;
     privacy_settings: PrivacySettings;
     has_password: boolean;
     linked_providers: OAuthProvider[];
-    system_role: UserSystemRole;
-    status: UserStatus;
     followers_count: number;
     following_count: number;
     created_at: string;
@@ -55,14 +48,7 @@ export interface PublicUserProfile {
     created_at: string;
 }
 
-export interface InternalUserSummary {
-    id: string;
-    username: string;
-    display_name: string;
-    avatar_url: string | null;
-    system_role: UserSystemRole;
-    status: UserStatus;
-}
+export type InternalUserSummary = Omit<AuthUserSummary, "email">;
 
 export function normalizePrivacySettings(raw: Record<string, unknown>): PrivacySettings {
     return {
@@ -115,17 +101,11 @@ export async function getOwnProfile(
     const followingCount: number = await em.count(UserFollowSchema, { follower: user.id });
 
     return {
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        display_name: user.displayName,
+        ...toAuthUserSummary(user),
         bio: user.bio ?? null,
-        avatar_url: user.avatarUrl ?? null,
         privacy_settings: normalizePrivacySettings(user.privacySettings),
         has_password: user.passwordHash !== null,
         linked_providers: linkedProviders,
-        system_role: user.systemRole,
-        status: user.status,
         followers_count: followersCount,
         following_count: followingCount,
         created_at: user.createdAt.toISOString(),

@@ -27,7 +27,7 @@ export interface OAuthFetcher {
 
 export type OAuthStrategy = (payload: OAuthLoginRequestDto) => Promise<OAuthProfile>;
 
-interface GoogleTokenResponse {
+interface OAuthTokenResponse {
     access_token?: string;
 }
 
@@ -36,10 +36,6 @@ interface GoogleUserInfoResponse {
     email?: string;
     name?: string;
     picture?: string;
-}
-
-interface GitHubTokenResponse {
-    access_token?: string;
 }
 
 interface GitHubUserResponse {
@@ -187,9 +183,9 @@ async function fetchGoogleProfile(
     if (!env.googleClientId || !env.googleClientSecret) {
         throw AppError.badGateway("OAUTH_NOT_CONFIGURED", "Google OAuth2 is not configured.");
     }
-    let tokenResponse: GoogleTokenResponse;
+    let tokenResponse: OAuthTokenResponse;
     try {
-        tokenResponse = await fetcher.postForm<GoogleTokenResponse>(GOOGLE_TOKEN_URL, {
+        tokenResponse = await fetcher.postForm<OAuthTokenResponse>(GOOGLE_TOKEN_URL, {
             code: payload.code,
             client_id: env.googleClientId,
             client_secret: env.googleClientSecret,
@@ -254,9 +250,9 @@ async function fetchGitHubProfile(
     if (!env.githubClientId || !env.githubClientSecret) {
         throw AppError.badGateway("OAUTH_NOT_CONFIGURED", "GitHub OAuth2 is not configured.");
     }
-    let tokenResponse: GitHubTokenResponse;
+    let tokenResponse: OAuthTokenResponse;
     try {
-        tokenResponse = await fetcher.postForm<GitHubTokenResponse>(GITHUB_TOKEN_URL, {
+        tokenResponse = await fetcher.postForm<OAuthTokenResponse>(GITHUB_TOKEN_URL, {
             code: payload.code,
             client_id: env.githubClientId,
             client_secret: env.githubClientSecret,

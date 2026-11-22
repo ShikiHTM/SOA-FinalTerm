@@ -313,65 +313,42 @@ components:
           type: boolean
 
     OwnUserProfile:
-      type: object
-      required:
-        - id
-        - email
-        - username
-        - display_name
-        - bio
-        - avatar_url
-        - privacy_settings
-        - has_password
-        - linked_providers
-        - system_role
-        - status
-        - followers_count
-        - following_count
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        username:
-          type: string
-        display_name:
-          type: string
-        bio:
-          type: string
-          nullable: true
-        avatar_url:
-          type: string
-          format: uri
-          nullable: true
-        privacy_settings:
-          $ref: '#/components/schemas/PrivacySettings'
-        has_password:
-          type: boolean
-        linked_providers:
-          type: array
-          items:
-            $ref: '#/components/schemas/OAuthProvider'
-        system_role:
-          $ref: '#/components/schemas/UserSystemRole'
-        status:
-          $ref: '#/components/schemas/UserStatus'
-        followers_count:
-          type: integer
-          minimum: 0
-        following_count:
-          type: integer
-          minimum: 0
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+      allOf:
+        - $ref: '#/components/schemas/AuthUserSummary'
+        - type: object
+          required:
+            - bio
+            - privacy_settings
+            - has_password
+            - linked_providers
+            - followers_count
+            - following_count
+            - created_at
+            - updated_at
+          properties:
+            bio:
+              type: string
+              nullable: true
+            privacy_settings:
+              $ref: '#/components/schemas/PrivacySettings'
+            has_password:
+              type: boolean
+            linked_providers:
+              type: array
+              items:
+                $ref: '#/components/schemas/OAuthProvider'
+            followers_count:
+              type: integer
+              minimum: 0
+            following_count:
+              type: integer
+              minimum: 0
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
 
     PublicUserProfile:
       type: object
@@ -539,60 +516,37 @@ components:
           $ref: '#/components/schemas/PaginationMeta'
 
     AdminUserRecord:
-      type: object
-      required:
-        - id
-        - email
-        - username
-        - display_name
-        - bio
-        - avatar_url
-        - system_role
-        - status
-        - moderation_reason
-        - moderated_by
-        - moderated_at
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        email:
-          type: string
-          format: email
-        username:
-          type: string
-        display_name:
-          type: string
-        bio:
-          type: string
-          nullable: true
-        avatar_url:
-          type: string
-          format: uri
-          nullable: true
-        system_role:
-          $ref: '#/components/schemas/UserSystemRole'
-        status:
-          $ref: '#/components/schemas/UserStatus'
-        moderation_reason:
-          type: string
-          nullable: true
-        moderated_by:
-          type: string
-          format: uuid
-          nullable: true
-        moderated_at:
-          type: string
-          format: date-time
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+      allOf:
+        - $ref: '#/components/schemas/AuthUserSummary'
+        - type: object
+          required:
+            - bio
+            - moderation_reason
+            - moderated_by
+            - moderated_at
+            - created_at
+            - updated_at
+          properties:
+            bio:
+              type: string
+              nullable: true
+            moderation_reason:
+              type: string
+              nullable: true
+            moderated_by:
+              type: string
+              format: uuid
+              nullable: true
+            moderated_at:
+              type: string
+              format: date-time
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
 
     PaginatedAdminUsers:
       type: object
