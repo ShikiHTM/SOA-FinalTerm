@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "dependencies": {
+    "@hono/node-server": "^2.1.8",
     "@mikro-orm/postgresql": "^7.2.8",
     "got": "^16.2.0",
     "hono": "^4.13.17",
