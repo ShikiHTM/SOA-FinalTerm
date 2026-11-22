@@ -1,0 +1,16 @@
+{
+    "name": "@soa-final-term/api-gateway",
+    "version": "0.0.1",
+    "private": true,
+    "scripts": {
+        "lint": "eslint .",
+        "typecheck": "tsc -p tsconfig.json --noEmit",
+        "build": "rolldown -c rolldown.config.ts",
+        "test": "tsx --test tests/gateway.test.ts"
+    },
+    "dependencies": {
+        "@hono/node-server": "^2.1.8",
+        "got": "^16.2.0",
+        "hono": "^4.13.17"
+    }
+}

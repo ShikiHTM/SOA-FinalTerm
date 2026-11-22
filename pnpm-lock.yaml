@@ -63,6 +63,18 @@ importers:
         specifier: ^8.58.0
         version: 8.72.1(eslint@9.39.5)(typescript@6.0.3)
 
+  applications/api-gateway:
+    dependencies:
+      '@hono/node-server':
+        specifier: ^2.1.8
+        version: 2.1.8(hono@4.13.17)
+      got:
+        specifier: ^16.2.0
+        version: 16.2.0
+      hono:
+        specifier: ^4.13.17
+        version: 4.13.17
+
   applications/assessment-service:
     dependencies:
       '@aws-sdk/client-s3':

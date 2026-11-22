@@ -11,6 +11,11 @@ services:
       - POSTGRES_DB=${USER_DB_NAME}
     ports:
       - 5001:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   user_service:
     build:
@@ -33,6 +38,9 @@ services:
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
     ports:
       - 3031:3031
+    depends_on:
+      user_pgsql_db:
+        condition: service_healthy
     restart: on-failure
 
   group_pgsql_db:
@@ -46,6 +54,11 @@ services:
       - POSTGRES_DB=${GROUP_DB_NAME}
     ports:
       - 5002:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   group_service:
     build:
@@ -63,7 +76,8 @@ services:
     ports:
       - 8002:8002
     depends_on:
-      - group_pgsql_db
+      group_pgsql_db:
+        condition: service_healthy
     restart: on-failure
 
   notification_pgsql_db:
@@ -114,6 +128,11 @@ services:
       - POSTGRES_DB=${ASSESSMENT_DB_NAME:-assessment_db}
     ports:
       - 5003:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   assessment_service:
     build:
@@ -143,7 +162,8 @@ services:
     ports:
       - 8003:8003
     depends_on:
-      - assessment_pgsql_db
+      assessment_pgsql_db:
+        condition: service_healthy
     restart: on-failure
 
   contest_pgsql_db:
@@ -157,6 +177,11 @@ services:
       - POSTGRES_DB=${CONTEST_DB_NAME:-contest_db}
     ports:
       - 5004:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   contest_service:
     build:
@@ -177,7 +202,8 @@ services:
     ports:
       - 8004:8004
     depends_on:
-      - contest_pgsql_db
+      contest_pgsql_db:
+        condition: service_healthy
     restart: on-failure
 
   submission_pgsql_db:
@@ -191,6 +217,11 @@ services:
       - POSTGRES_DB=${SUBMISSION_DB_NAME:-submission_db}
     ports:
       - 5005:5432
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   kafka:
     image: apache/kafka:3.9.0
@@ -238,7 +269,33 @@ services:
     ports:
       - 8005:8005
     depends_on:
-      - submission_pgsql_db
+      submission_pgsql_db:
+        condition: service_healthy
+    restart: on-failure
+
+  api_gateway:
+    build:
+      context: .
+      dockerfile: applications/api-gateway/Dockerfile
+    environment:
+      PORT: 3000
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      USER_SERVICE_URL: http://user_service:3031
+      GROUP_SERVICE_URL: http://group_service:8002
+      ASSESSMENT_SERVICE_URL: http://assessment_service:8003
+      CONTEST_SERVICE_URL: http://contest_service:8004
+      SUBMISSION_SERVICE_URL: http://submission_service:8005
+      NOTIFICATION_SERVICE_URL: http://notification_service:3037
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
+    ports:
+      - 3000:3000
+    depends_on:
+      - user_service
+      - group_service
+      - assessment_service
+      - contest_service
+      - submission_service
+      - notification_service
     restart: on-failure
 
   swagger_ui:
@@ -249,6 +306,7 @@ services:
     environment:
       URLS: >
         [
+          { "url": "/applications/api-gateway/docs/openapi.yaml", "name": "API Gateway (Public)" },
           { "url": "/applications/user-service/docs/openapi.yaml", "name": "User Service" },
           { "url": "/applications/group-service/docs/openapi.yaml", "name": "Group Service" },
           { "url": "/applications/assessment-service/docs/openapi.yaml", "name": "Assessment Service" },
@@ -259,6 +317,14 @@ services:
     volumes:
       - ./applications:/usr/share/nginx/html/applications:ro
       - ./packages:/usr/share/nginx/html/packages:ro
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-token}
 
 volumes:
   user_data:

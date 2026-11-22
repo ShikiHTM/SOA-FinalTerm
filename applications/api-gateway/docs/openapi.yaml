@@ -1,0 +1,1859 @@
+openapi: 3.0.3
+info:
+  title: LMS API Gateway Contract
+  version: 1.0.0
+  description: Unified public API contract exposing authentication, user profiles, learning groups, assessments, contests, submissions, notifications, and administration endpoints.
+
+servers:
+  - url: http://localhost:3000
+    description: Local Dev Server
+  - url: http://api_gateway:3000
+    description: Docker Compose Internal Network
+
+tags:
+  - name: Authentication
+    description: Registration, sign-in, OAuth2 exchange, and sign-out.
+  - name: Users
+    description: Profile management and social follow actions.
+  - name: Groups
+    description: Learning group discovery, settings, membership, join requests, and bans.
+  - name: Assessments
+    description: Assessment authoring, retrieval, answer keys, and favorites.
+  - name: Contests
+    description: Scheduled contest management and participation checks.
+  - name: Submissions
+    description: Contest and practice submissions, attempt history, and essay grading.
+  - name: Notifications
+    description: In-app notification listing and read status updates.
+  - name: Admin
+    description: Platform administration across users, groups, assessments, and contests.
+  - name: Observability
+    description: Service health status.
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target resource UUID.
+    UsernameParam:
+      in: path
+      name: username
+      required: true
+      schema:
+        type: string
+      description: Target account username.
+    CodeParam:
+      in: path
+      name: code
+      required: true
+      schema:
+        type: string
+      description: Unique group invitation code.
+    RequestIdParam:
+      in: path
+      name: requestId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target join request UUID.
+    UserIdParam:
+      in: path
+      name: userId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target user UUID.
+    NotificationIdParam:
+      in: path
+      name: notification_id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target notification UUID.
+    IdempotencyKeyHeader:
+      in: header
+      name: Idempotency-Key
+      required: false
+      schema:
+        type: string
+      description: Optional key to prevent duplicate submission creation on retries.
+    PageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: 1-based page number.
+    LimitQuery:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Maximum items per page.
+
+  schemas:
+    JsonObject:
+      type: object
+      additionalProperties: true
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: api-gateway
+
+  responses:
+    OkJson:
+      description: Request succeeded.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonObject'
+    CreatedJson:
+      description: Resource created.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/JsonObject'
+    NoContent:
+      description: Operation completed with no response body.
+    Conflict:
+      description: '409 Conflict - Resource state conflicts with the requested operation.'
+      content:
+        application/json:
+          schema:
+            $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+    BadGateway:
+      description: '502 Bad Gateway - Dependent service unavailable or returned an invalid response.'
+      content:
+        application/json:
+          schema:
+            $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+
+paths:
+  /health:
+    get:
+      tags: [Observability]
+      summary: Check gateway health
+      description: Returns the API gateway operational health status.
+      responses:
+        '200':
+          description: Gateway is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/auth/register:
+    post:
+      tags: [Authentication]
+      summary: Register account
+      description: Registers a new user account and returns a Bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Sign in
+      description: Authenticates with email or username and password to receive a Bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/auth/oauth:
+    post:
+      tags: [Authentication]
+      summary: Authenticate via OAuth2
+      description: Signs in or registers an account using a Google or GitHub authorization code.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+
+  /api/v1/auth/logout:
+    post:
+      tags: [Authentication]
+      summary: Sign out
+      description: Invalidates the caller's active access token.
+      security:
+        - BearerAuth: []
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get own profile
+      description: Returns the signed-in user's full profile, privacy preferences, linked providers, and follow counts.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+    patch:
+      tags: [Users]
+      summary: Update own profile
+      description: Updates the signed-in user's profile information or privacy settings.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/users/me/password:
+    put:
+      tags: [Users]
+      summary: Change password
+      description: Updates the signed-in user's password after verifying the current password.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/users/username/{username}:
+    get:
+      tags: [Users]
+      summary: Get profile by username
+      description: Returns a user's public profile looked up by username.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/UsernameParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/users/{id}:
+    get:
+      tags: [Users]
+      summary: Get profile by ID
+      description: Returns a user's public profile looked up by user ID.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/users/{id}/follow:
+    post:
+      tags: [Users]
+      summary: Follow user
+      description: Follows another user on behalf of the signed-in caller.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Users]
+      summary: Unfollow user
+      description: Removes an existing follow relationship with another user.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/users/{id}/followers:
+    get:
+      tags: [Users]
+      summary: List followers
+      description: Returns a paginated list of users following the target user.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/users/{id}/following:
+    get:
+      tags: [Users]
+      summary: List following
+      description: Returns a paginated list of users followed by the target user.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups:
+    get:
+      tags: [Groups]
+      summary: Browse groups
+      description: Lists active learning groups with optional keyword search, visibility filters, and owner summaries.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: visibility
+          schema:
+            type: string
+            enum: [PUBLIC, PRIVATE]
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+    post:
+      tags: [Groups]
+      summary: Create group
+      description: Creates a new learning group with an invitation code and assigns the caller as owner.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/groups/me:
+    get:
+      tags: [Groups]
+      summary: List my groups
+      description: Lists learning groups the signed-in user belongs to along with owner summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/groups/code/{code}:
+    get:
+      tags: [Groups]
+      summary: Lookup group by code
+      description: Looks up a learning group by its invitation code and includes its owner summary.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CodeParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}:
+    get:
+      tags: [Groups]
+      summary: Get group details
+      description: Returns group details, caller membership role, and owner summary.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    patch:
+      tags: [Groups]
+      summary: Update group settings
+      description: Updates group metadata, visibility, join policy, or password when invoked by the group owner.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Groups]
+      summary: Delete group
+      description: Deletes a learning group and removes its memberships when invoked by the group owner.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/transfer-ownership:
+    post:
+      tags: [Groups]
+      summary: Transfer group ownership
+      description: Transfers group ownership to another existing group member.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/join:
+    post:
+      tags: [Groups]
+      summary: Join group
+      description: Joins an open public group or a password-protected private group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/groups/{id}/leave:
+    post:
+      tags: [Groups]
+      summary: Leave group
+      description: Removes the signed-in non-owner member from the group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/requests:
+    post:
+      tags: [Groups]
+      summary: Request to join group
+      description: Submits a membership request for a private group requiring approval.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      tags: [Groups]
+      summary: List join requests
+      description: Lists group join requests enriched with applicant and reviewer profiles.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [PENDING, APPROVED, REJECTED]
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/groups/{id}/requests/{requestId}:
+    patch:
+      tags: [Groups]
+      summary: Review join request
+      description: Approves or rejects a pending group join request.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/RequestIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/members:
+    get:
+      tags: [Groups]
+      summary: List group members
+      description: Lists group members enriched with user profile summaries.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: role
+          schema:
+            type: string
+            enum: [MEMBER, MODERATOR, OWNER]
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/members/{userId}/role:
+    patch:
+      tags: [Groups]
+      summary: Update member role
+      description: Assigns or revokes moderator privileges for a group member.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/members/{userId}:
+    delete:
+      tags: [Groups]
+      summary: Remove group member
+      description: Removes a target member from the group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/groups/{id}/bans:
+    get:
+      tags: [Groups]
+      summary: List group bans
+      description: Lists active group bans enriched with banned and moderating user profiles.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+    post:
+      tags: [Groups]
+      summary: Ban user from group
+      description: Bans a user from participating in or joining the group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/groups/{id}/bans/{userId}:
+    delete:
+      tags: [Groups]
+      summary: Unban user from group
+      description: Revokes an active group ban for a user.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/assessments:
+    get:
+      tags: [Assessments]
+      summary: List group assessments
+      description: Lists assessments in a group enriched with creator summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: group_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: visibility
+          schema:
+            type: string
+            enum: [DRAFT, PRIVATE, PUBLIC]
+        - in: query
+          name: is_practice_enabled
+          schema:
+            type: boolean
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+    post:
+      tags: [Assessments]
+      summary: Create digital assessment
+      description: Creates a structured assessment from JSON questions and answer keys.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/assessments/pdf:
+    post:
+      tags: [Assessments]
+      summary: Create PDF assessment
+      description: Creates an assessment by uploading a PDF exam document and optional answer keys.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                group_id:
+                  type: string
+                  format: uuid
+                assessment_type:
+                  type: string
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/assessments/favorites:
+    get:
+      tags: [Assessments]
+      summary: List favorite assessments
+      description: Lists active assessments marked as favorites by the signed-in user with creator summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/assessments/{id}:
+    get:
+      tags: [Assessments]
+      summary: Get assessment details
+      description: Returns assessment metadata combined with creator and owning group summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    put:
+      tags: [Assessments]
+      summary: Update assessment
+      description: Updates assessment metadata, structured questions, or uploaded PDF file.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Assessments]
+      summary: Delete assessment
+      description: Deletes an assessment when invoked by an authorized group manager or administrator.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/assessments/{id}/content:
+    get:
+      tags: [Assessments]
+      summary: Get assessment content
+      description: Retrieves exam questions without answer keys or returns a temporary PDF download URL.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/assessments/{id}/answer-key:
+    get:
+      tags: [Assessments]
+      summary: Get answer key
+      description: Retrieves the assessment answer keys and grading rubrics for authorized group managers.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    put:
+      tags: [Assessments]
+      summary: Update answer key
+      description: Creates or replaces the mapped answer keys for an assessment.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/assessments/{id}/favorite:
+    post:
+      tags: [Assessments]
+      summary: Mark favorite assessment
+      description: Bookmarks an accessible assessment in the signed-in user's favorites list.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Assessments]
+      summary: Unmark favorite assessment
+      description: Removes an assessment from the signed-in user's favorites list.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/contests:
+    get:
+      tags: [Contests]
+      summary: List contests
+      description: Lists public contests or group contests filtered by status, phase, and keyword, enriched with organizer summaries.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: visibility
+          schema:
+            type: string
+            enum: [PUBLIC, PRIVATE]
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [DRAFT, PUBLISHED, CANCELLED]
+        - in: query
+          name: phase
+          schema:
+            type: string
+            enum: [DRAFT, UPCOMING, ONGOING, ENDED, CANCELLED]
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+    post:
+      tags: [Contests]
+      summary: Create contest
+      description: Creates and schedules a contest linked to an existing group assessment.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/contests/{id}:
+    get:
+      tags: [Contests]
+      summary: Get contest details
+      description: Returns contest details combined with group, assessment summary, organizer, and caller participation eligibility.
+      security:
+        - {}
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    patch:
+      tags: [Contests]
+      summary: Update contest
+      description: Updates an upcoming contest or permitted settings of an ongoing contest.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [Contests]
+      summary: Delete contest
+      description: Deletes a contest that is not currently ongoing.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/contests/{id}/cancel:
+    post:
+      tags: [Contests]
+      summary: Cancel contest
+      description: Cancels a draft, upcoming, or ongoing contest.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/contests/{id}/participation:
+    get:
+      tags: [Contests]
+      summary: Check contest eligibility
+      description: Checks whether the signed-in user is eligible to participate in the contest.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/submissions:
+    post:
+      tags: [Submissions]
+      summary: Submit assessment answers
+      description: Validates contest or practice eligibility, records the attempt, and queues grading.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '201':
+          $ref: '#/components/responses/CreatedJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    get:
+      tags: [Submissions]
+      summary: List group submissions
+      description: Lists group or contest submissions enriched with student and grader summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: contest_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: assessment_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: grading_status
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/submissions/me:
+    get:
+      tags: [Submissions]
+      summary: List own submissions
+      description: Lists submission attempts made by the signed-in user enriched with student and grader summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: contest_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: assessment_id
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/submissions/{id}:
+    get:
+      tags: [Submissions]
+      summary: Get submission details
+      description: Returns submission scores and answers combined with student, grader, group, assessment, and contest summaries.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/submissions/{id}/grade:
+    patch:
+      tags: [Submissions]
+      summary: Grade essay items
+      description: Records essay scores and feedback and publishes the final combined submission score.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications
+      description: Returns notifications belonging to the signed-in user with optional unread-only filtering.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: unread_only
+          schema:
+            type: boolean
+            default: false
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Notifications retrieved.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/JsonObject'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+
+  /api/v1/notifications/{notification_id}/read:
+    patch:
+      tags: [Notifications]
+      summary: Mark notification read
+      description: Marks one of the signed-in user's notifications as read.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/NotificationIdParam'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/users:
+    get:
+      tags: [Admin]
+      summary: Admin list users
+      description: Searches and lists user accounts across the platform for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: role
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/admin/users/{id}:
+    get:
+      tags: [Admin]
+      summary: Admin get user
+      description: Returns full user account and moderation details for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/users/{id}/status:
+    patch:
+      tags: [Admin]
+      summary: Admin update user status
+      description: Suspends, bans, or reactivates a user account.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/users/{id}/role:
+    patch:
+      tags: [Admin]
+      summary: Admin update user role
+      description: Grants or revokes administrator privileges for a user account.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/groups:
+    get:
+      tags: [Admin]
+      summary: Admin list groups
+      description: Searches and lists all learning groups enriched with owner summaries for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: search
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: visibility
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/admin/groups/{id}:
+    get:
+      tags: [Admin]
+      summary: Admin get group
+      description: Returns full group details and owner summary for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Admin]
+      summary: Admin delete group
+      description: Deletes a policy-violating learning group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/groups/{id}/status:
+    patch:
+      tags: [Admin]
+      summary: Admin update group status
+      description: Suspends or restores a learning group.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/assessments:
+    get:
+      tags: [Admin]
+      summary: Admin list assessments
+      description: Searches and lists all assessments enriched with creator summaries for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: visibility
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/admin/assessments/{id}:
+    get:
+      tags: [Admin]
+      summary: Admin get assessment
+      description: Returns full assessment details with creator and group summaries for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Admin]
+      summary: Admin delete assessment
+      description: Deletes a policy-violating assessment.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/assessments/{id}/status:
+    patch:
+      tags: [Admin]
+      summary: Admin update assessment status
+      description: Hides or restores an assessment.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/contests:
+    get:
+      tags: [Admin]
+      summary: Admin list contests
+      description: Searches and lists all contests enriched with organizer summaries for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: visibility
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+        - in: query
+          name: phase
+          schema:
+            type: string
+        - in: query
+          name: search
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+
+  /api/v1/admin/contests/{id}:
+    get:
+      tags: [Admin]
+      summary: Admin get contest
+      description: Returns full contest details combined with group, assessment summary, and organizer for administrators.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+    delete:
+      tags: [Admin]
+      summary: Admin delete contest
+      description: Deletes a policy-violating contest.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '204':
+          $ref: '#/components/responses/NoContent'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+
+  /api/v1/admin/contests/{id}/status:
+    patch:
+      tags: [Admin]
+      summary: Admin update contest status
+      description: Publishes, unpublishes, or cancels a contest.
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JsonObject'
+      responses:
+        '200':
+          $ref: '#/components/responses/OkJson'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
