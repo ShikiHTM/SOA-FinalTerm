@@ -12,13 +12,13 @@ import {
 import type { Dispatch,SetStateAction } from "react";
 import { useState,type ReactNode } from "react";
 import { Link,useParams } from "react-router-dom";
-import { canManage,date,hasAccess,useApp } from "../../../shared/context";
+import { canManage, date, displayNameFor, hasAccess, useApp } from "../../../shared/context";
 import type { Assessment,Contest,Group,GroupMember,JoinRequest } from "../../../types";
 import { hasGroupPermission } from "../../../authorization/permissions";
 
 export function GroupDetail(): ReactNode {
     const { groupId }: { groupId?: string } = useParams();
-    const { data, api, refresh }: ReturnType<typeof useApp> = useApp();
+    const { data, api, refresh, accounts }: ReturnType<typeof useApp> = useApp();
     const [password, setPassword]: [string, Dispatch<SetStateAction<string>>] =
         useState<string>("");
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
@@ -402,11 +402,11 @@ export function GroupDetail(): ReactNode {
                                             to={`/users/${encodeURIComponent(member.userEmail)}`}
                                         >
                                             <span className="group-person-avatar">
-                                                {member.userEmail.charAt(0).toUpperCase()}
+                                                {displayNameFor(accounts, member.userEmail).charAt(0).toUpperCase()}
                                             </span>
                                             <span>
-                                                <strong>{member.userEmail}</strong>
-                                                <small>{member.role === "OWNER" ? "Chủ nhóm" : member.role === "MODERATOR" ? "Điều hành viên" : "Thành viên"}</small>
+                                                <strong>{displayNameFor(accounts, member.userEmail)}</strong>
+                                                <small>{member.userEmail} · {member.role === "OWNER" ? "Chủ nhóm" : member.role === "MODERATOR" ? "Điều hành viên" : "Thành viên"}</small>
                                             </span>
                                         </Link>
                                     ))}
@@ -440,11 +440,11 @@ export function GroupDetail(): ReactNode {
                                             <div className="group-request" key={request.userEmail}>
                                                 <div className="group-request-person">
                                                     <span className="group-person-avatar">
-                                                        {request.userEmail.charAt(0).toUpperCase()}
+                                                        {displayNameFor(accounts, request.userEmail).charAt(0).toUpperCase()}
                                                     </span>
                                                     <div>
-                                                        <strong>{request.userEmail}</strong>
-                                                        <small>Muốn tham gia nhóm</small>
+                                                        <strong>{displayNameFor(accounts, request.userEmail)}</strong>
+                                                        <small>{request.userEmail} · Muốn tham gia nhóm</small>
                                                     </div>
                                                 </div>
                                                 <div className="group-request-actions">

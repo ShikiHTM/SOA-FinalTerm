@@ -13,7 +13,7 @@ import { normalizeSearch } from "../../../shared/utils/search";
 import type { Assessment,Group } from "../../../types";
 
 export function Dashboard(): ReactNode {
-    const { data, email }: ReturnType<typeof useApp> = useApp();
+    const { data, displayName }: ReturnType<typeof useApp> = useApp();
     const [query, setQuery]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
     const [filter, setFilter]: [
         "ALL" | "PUBLIC" | "PRIVATE",
@@ -43,7 +43,7 @@ export function Dashboard(): ReactNode {
                         <span /> KHÔNG GIAN HỌC TẬP CỦA BẠN
                     </p>
                     <h1>
-                        Xin chào, <span>{email.split("@")[0]}</span>
+                        Xin chào, <span>{displayName}</span>
                     </h1>
                     <p>Hôm nay bạn muốn học điều gì? Khám phá một đề phù hợp và bắt đầu nhé.</p>
                 </div>

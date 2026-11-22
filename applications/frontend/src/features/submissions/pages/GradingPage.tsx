@@ -1,11 +1,11 @@
 import type { Dispatch,SetStateAction } from "react";
 import { useState,type FormEvent,type ReactNode } from "react";
 import { Link,useParams } from "react-router-dom";
-import { canManage,date,PageTitle,useApp } from "../../../shared/context";
+import { canManage, date, displayNameFor, PageTitle, useApp } from "../../../shared/context";
 import type { Assessment,Contest,Group,Question,Submission } from "../../../types";
 
 export function Grading(): ReactNode {
-    const { data, api, refresh }: ReturnType<typeof useApp> = useApp();
+    const { data, api, refresh, accounts }: ReturnType<typeof useApp> = useApp();
     const { groupId }: { groupId?: string } = useParams();
     const group: Group | undefined = data.groups.find(
         (item: Group): boolean => item.id === groupId,
@@ -77,7 +77,11 @@ export function Grading(): ReactNode {
                                             )?.title
                                         }
                                     </strong>
-                                    <p className="hint">Người nộp: {submission.authorEmail}</p>
+                                    <p className="hint">
+                                        Người nộp: {displayNameFor(accounts, submission.authorEmail)}
+                                        {displayNameFor(accounts, submission.authorEmail) !== submission.authorEmail &&
+                                            ` · ${submission.authorEmail}`}
+                                    </p>
                                     <p className="hint">
                                         {date(submission.submittedAt)} ·{" "}
                                         {submission.status === "GRADED"

@@ -3,14 +3,17 @@ import {
     FileText,
     Globe2,
     GraduationCap,
+    Heart,
     LockKeyhole,
+    Pencil,
     Play,
-    Users
+    Trash2,
+    Users,
 } from "lucide-react";
 import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { Link,useNavigate,useParams } from "react-router-dom";
-import { canManage,hasAccess,useApp } from "../../../shared/context";
-import type { Assessment,Group,Question } from "../../../types";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { canManage, hasAccess, useApp } from "../../../shared/context";
+import type { Assessment, Group, Question } from "../../../types";
 
 export function AssessmentDetail(): ReactNode {
     const { assessmentId }: { assessmentId?: string } = useParams();
@@ -83,19 +86,51 @@ export function AssessmentDetail(): ReactNode {
                         <Users size={15} /> {group.name}
                     </Link>
                 </div>
+                <div className="assessment-hero-actions" aria-label="Thao tác đề thi">
+                    <button
+                        className="icon-button"
+                        type="button"
+                        aria-label={
+                            data.favoriteAssessmentIds.includes(exam.id)
+                                ? "Bỏ yêu thích"
+                                : "Lưu yêu thích"
+                        }
+                        aria-pressed={data.favoriteAssessmentIds.includes(exam.id)}
+                        title={
+                            data.favoriteAssessmentIds.includes(exam.id)
+                                ? "Bỏ yêu thích"
+                                : "Lưu yêu thích"
+                        }
+                        onClick={(): void => { void toggleFavorite(); }}
+                    >
+                        <Heart
+                            size={18}
+                            fill={data.favoriteAssessmentIds.includes(exam.id) ? "currentColor" : "none"}
+                        />
+                    </button>
+                    {canManage(group) && (
+                        <>
+                            <Link
+                                className="icon-button"
+                                aria-label="Chỉnh sửa đề"
+                                title="Chỉnh sửa đề"
+                                to={`/assessments/${exam.id}/edit`}
+                            >
+                                <Pencil size={17} />
+                            </Link>
+                            <button
+                                className="icon-button"
+                                type="button"
+                                aria-label="Xóa đề"
+                                title="Xóa đề"
+                                onClick={(): void => { void deleteAssessment(); }}
+                            >
+                                <Trash2 size={17} />
+                            </button>
+                        </>
+                    )}
+                </div>
             </header>
-            <div className="assessment-breadcrumb">
-                <button className="button" type="button" onClick={(): void => { void toggleFavorite(); }}>
-                    {data.favoriteAssessmentIds.includes(exam.id) ? "Bỏ yêu thích" : "Lưu yêu thích"}
-                </button>
-                <Link to="/favorites">Đề yêu thích</Link>
-                {canManage(group) && (
-                    <>
-                        <Link className="button" to={`/assessments/${exam.id}/edit`}>Chỉnh sửa đề</Link>
-                        <button className="button" type="button" onClick={(): void => { void deleteAssessment(); }}>Xóa đề</button>
-                    </>
-                )}
-            </div>
             {error && <p className="error" role="alert">{error}</p>}
 
             {!accessible ? (

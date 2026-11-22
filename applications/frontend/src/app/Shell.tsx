@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetSt
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Bell, BookOpen, ClipboardList, Home, LogOut, Users } from "lucide-react";
 import { getServices } from "../data/services";
+import type { Account } from "../data/contracts/services";
 import type { DataSource } from "../data/contracts/dataSource";
 import type { Notice, Snapshot } from "../types";
 import type { Context } from "../shared/context";
@@ -10,12 +11,18 @@ import type { Theme } from "./theme";
 
 export function Shell({
     email,
+    displayName,
+    accounts,
+    refreshProfile,
     onLogout,
     theme,
     onToggleTheme,
     onPreviewChange,
 }: {
     email: string;
+    displayName: string;
+    accounts: Account[];
+    refreshProfile: () => Promise<void>;
     onLogout: () => void;
     theme: Theme;
     onToggleTheme: () => void;
@@ -74,10 +81,10 @@ export function Shell({
                     </Link>
                     <div className="header-account">
                         <span className="account-avatar" aria-hidden="true">
-                            {email.charAt(0).toUpperCase()}
+                            {displayName.charAt(0).toUpperCase()}
                         </span>
                         <div className="account-copy">
-                            <strong>{email.split("@")[0]}</strong>
+                            <strong>{displayName}</strong>
                             <small>{email}</small>
                         </div>
                     </div>
@@ -182,7 +189,7 @@ export function Shell({
                     )}
                     {error && <p className="error">{error}</p>}
                     {data ? (
-                        <Outlet context={{ data, api, refresh, email } satisfies Context} />
+                        <Outlet context={{ data, api, refresh, accounts, displayName, refreshProfile, email } satisfies Context} />
                     ) : (
                         !error && <p>Đang tải dữ liệu…</p>
                     )}

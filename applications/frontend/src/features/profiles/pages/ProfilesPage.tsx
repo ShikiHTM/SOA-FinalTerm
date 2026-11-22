@@ -4,7 +4,13 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import type { Account } from "../../../data/contracts/services";
 import { getServices } from "../../../data/services";
 
-export function ProfilesPage({ email }: { email: string }): ReactNode {
+export function ProfilesPage({
+    email,
+    onProfileUpdated,
+}: {
+    email: string;
+    onProfileUpdated?: () => Promise<void>;
+}): ReactNode {
     const { userEmail }: { userEmail?: string } = useParams();
     const location: ReturnType<typeof useLocation> = useLocation();
     const navigate: ReturnType<typeof useNavigate> = useNavigate();
@@ -40,7 +46,13 @@ export function ProfilesPage({ email }: { email: string }): ReactNode {
 
     async function save(event: FormEvent): Promise<void> {
         event.preventDefault();
-        try { await getServices().accounts.updateProfile(email, name, bio); await reload(); setError(""); }
+        try {
+            await getServices().accounts.updateProfile(email, name, bio);
+            await reload();
+            await onProfileUpdated?.();
+            setError("");
+            setMessage("Đã cập nhật hồ sơ.");
+        }
         catch (reason: unknown) { setError(reason instanceof Error ? reason.message : "Không thể lưu hồ sơ."); }
     }
     async function toggleFollow(targetEmail: string): Promise<void> {

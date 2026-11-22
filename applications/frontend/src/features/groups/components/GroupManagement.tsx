@@ -1,11 +1,11 @@
 import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { useNavigate } from "react-router-dom";
 import { canManageMember, hasGroupPermission } from "../../../authorization/permissions";
-import { useApp } from "../../../shared/context";
+import { displayNameFor, useApp } from "../../../shared/context";
 import type { Group, GroupMember } from "../../../types";
 
 export function GroupManagement({ group }: { group: Group }): ReactNode {
-    const { data, api, refresh, email }: ReturnType<typeof useApp> = useApp();
+    const { data, api, refresh, accounts, email }: ReturnType<typeof useApp> = useApp();
     const navigate: ReturnType<typeof useNavigate> = useNavigate();
     const [name, setName]: [string, Dispatch<SetStateAction<string>>] = useState<string>(group.name);
     const [description, setDescription]: [string, Dispatch<SetStateAction<string>>] = useState<string>(group.description);
@@ -52,7 +52,7 @@ export function GroupManagement({ group }: { group: Group }): ReactNode {
             <ul className="admin-list">
                 {members.map((member: GroupMember): ReactNode => (
                     <li className="admin-row" key={member.userEmail}>
-                        <span className="admin-row-copy"><strong>{member.userEmail}</strong><small>{member.role}</small></span>
+                        <span className="admin-row-copy"><strong>{displayNameFor(accounts, member.userEmail)}</strong><small>{member.userEmail} · {member.role}</small></span>
                         {hasGroupPermission(group.role, "ASSIGN_MODERATOR") && member.userEmail !== email && (
                             <>
                                 <button className="button" type="button" onClick={(): void => {

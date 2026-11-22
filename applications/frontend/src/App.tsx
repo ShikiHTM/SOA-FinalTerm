@@ -1,6 +1,7 @@
-import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useCallback, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { dataSourceError, getServices } from "./data/services";
+import type { Account } from "./data/contracts/services";
 import { Dashboard } from "./features/dashboard/pages/DashboardPage";
 import { Groups } from "./features/groups/pages/GroupsPage";
 import { GroupDetail } from "./features/groups/pages/GroupDetailPage";
@@ -77,6 +78,32 @@ function Application(): ReactNode {
     const [email, setEmail]: [string, Dispatch<SetStateAction<string>>] = useState<string>(() => {
         return getServices().session.read();
     });
+    const [displayName, setDisplayName]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
+    const [accounts, setAccounts]: [Account[], Dispatch<SetStateAction<Account[]>>] =
+        useState<Account[]>([]);
+    const refreshProfile: () => Promise<void> = useCallback(async (): Promise<void> => {
+        if (!email) {
+            setAccounts([]);
+            setDisplayName("");
+            return;
+        }
+
+        try {
+            const accounts: Account[] = await getServices().accounts.list();
+            setAccounts(accounts);
+            const account: Account | undefined = accounts.find(
+                (item: Account): boolean => item.email === email,
+            );
+            setDisplayName(account?.displayName || email.split("@")[0]);
+        } catch {
+            setAccounts([]);
+            setDisplayName(email.split("@")[0]);
+        }
+    }, [email]);
+    useEffect((): void => {
+        void refreshProfile();
+    }, [refreshProfile]);
     useEffect((): (() => void) => {
         const validate: () => void = (): void => {
             if (email) void getServices().accounts.isActive(email).then((active: boolean): void => {
@@ -113,8 +140,8 @@ function Application(): ReactNode {
                 <Route path="/discover" element={guestPage} />
                 <Route path="/discover/groups/:groupId" element={guestPage} />
                 <Route path="/discover/contests/:contestId" element={guestPage} />
-                <Route path="/users" element={<ProfilesPage email={email} />} />
-                <Route path="/users/:userEmail" element={<ProfilesPage email={email} />} />
+                <Route path="/users" element={<ProfilesPage email={email} onProfileUpdated={refreshProfile} />} />
+                <Route path="/users/:userEmail" element={<ProfilesPage email={email} onProfileUpdated={refreshProfile} />} />
                 <Route
                     path="/login"
                     element={
@@ -132,6 +159,9 @@ function Application(): ReactNode {
                             <Shell
                                 key={`${email}:${previewRevision}`}
                                 email={email}
+                                displayName={displayName || email.split("@")[0]}
+                                accounts={accounts}
+                                refreshProfile={refreshProfile}
                                 onLogout={logout}
                                 theme={theme}
                                 onToggleTheme={toggleTheme}
@@ -160,7 +190,7 @@ function Application(): ReactNode {
                     <Route path="submissions/:submissionId" element={<SubmissionDetail />} />
                     <Route path="notifications" element={<Notifications />} />
                     <Route path="favorites" element={<FavoritesPage />} />
-                    <Route path="profile" element={<ProfilesPage email={email} />} />
+                    <Route path="profile" element={<ProfilesPage email={email} onProfileUpdated={refreshProfile} />} />
                     <Route path="admin" element={getServices().accounts.isSystemAdmin(email) ? <AdminPage /> : <Navigate to="/" replace />} />
                     <Route path="*" element={<p className="empty">Không tìm thấy trang.</p>} />
                 </Route>
