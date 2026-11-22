@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { Link, NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { Bell, BookOpen, ClipboardList, Home, LogOut, Users } from "lucide-react";
 import { getServices } from "../data/services";
 import type { DataSource } from "../data/contracts/dataSource";
@@ -22,6 +22,7 @@ export function Shell({
     onPreviewChange: () => void;
 }): ReactNode {
     const api: DataSource = useMemo((): DataSource => getServices().createDataSource(email), [email]);
+    const navigate: ReturnType<typeof useNavigate> = useNavigate();
     const [data, setData]: [Snapshot | null, Dispatch<SetStateAction<Snapshot | null>>] =
         useState<Snapshot | null>(null);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
@@ -84,7 +85,10 @@ export function Shell({
                         className="icon-button logout-button"
                         aria-label="Đăng xuất"
                         title="Đăng xuất"
-                        onClick={onLogout}
+                        onClick={(): void => {
+                            navigate("/login", { replace: true });
+                            onLogout();
+                        }}
                     >
                         <LogOut size={18} />
                     </button>

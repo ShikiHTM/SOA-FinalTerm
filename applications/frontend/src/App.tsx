@@ -30,15 +30,22 @@ const THEME_KEY: string = "lms-theme";
 
 function RequireSession({
     email,
+    logoutRequested,
     children,
 }: {
     email: string;
+    logoutRequested: boolean;
     children: ReactNode;
 }): ReactNode {
     const { pathname }: ReturnType<typeof useLocation> = useLocation();
 
     if (!email) {
-        return <Navigate to={pathname === "/" ? "/discover" : "/login"} replace />;
+        const destination: string = logoutRequested
+            ? "/login"
+            : pathname === "/"
+              ? "/discover"
+              : "/login";
+        return <Navigate to={destination} replace />;
     }
 
     return children;
@@ -47,6 +54,8 @@ function RequireSession({
 
 function Application(): ReactNode {
     const [previewRevision, setPreviewRevision]: [number, Dispatch<SetStateAction<number>>] = useState<number>(0);
+    const [logoutRequested, setLogoutRequested]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(false);
     const [theme, setTheme]: [Theme, Dispatch<SetStateAction<Theme>>] = useState<Theme>(() => {
         try {
             return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
@@ -87,9 +96,11 @@ function Application(): ReactNode {
     }, [email]);
     function login(value: string): void {
         getServices().session.save(value);
+        setLogoutRequested(false);
         setEmail(value);
     }
     function logout(): void {
+        setLogoutRequested(true);
         getServices().session.clear();
         setEmail("");
     }
@@ -117,7 +128,7 @@ function Application(): ReactNode {
                 <Route path="/register" element={email ? <Navigate to="/" replace /> : <Auth key="register" register onLogin={login} theme={theme} onToggleTheme={toggleTheme} />} />
                 <Route
                     element={
-                        <RequireSession email={email}>
+                        <RequireSession email={email} logoutRequested={logoutRequested}>
                             <Shell
                                 key={`${email}:${previewRevision}`}
                                 email={email}
