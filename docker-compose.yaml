@@ -1,5 +1,40 @@
 name: LMS-SOA-Project
 services:
+  user_pgsql_db:
+    image: postgres:18.6-alpine
+    container_name: user_pgsql_db
+    volumes:
+      - user_data:/var/lib/postgresql
+    environment:
+      - POSTGRES_USER=${USER_DB_USER}
+      - POSTGRES_PASSWORD=${USER_DB_PASSWORD}
+      - POSTGRES_DB=${USER_DB_NAME}
+    ports:
+      - 5001:5432
+
+  user_service:
+    build:
+      context: .
+      dockerfile: applications/user-service/Dockerfile
+    environment:
+      PORT: 3031
+      USER_DB_HOST: user_pgsql_db
+      USER_DB_PORT: 5432
+      USER_DB_USER: ${USER_DB_USER}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD}
+      USER_DB_NAME: ${USER_DB_NAME}
+      USER_DB_SYNC_SCHEMA: ${USER_DB_SYNC_SCHEMA}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN_SECONDS: ${JWT_EXPIRES_IN_SECONDS}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET}
+    ports:
+      - 3031:3031
+    restart: on-failure
+
   notification_pgsql_db:
     image: postgres:18.6-alpine
     environment:
@@ -57,6 +92,7 @@ services:
     environment:
       URLS: >
         [
+          { "url": "/applications/user-service/docs/openapi.yaml", "name": "User Service" },
           { "url": "/applications/assessment-service/docs/openapi.yaml", "name": "Assessment Service" },
           { "url": "/applications/submission-service/docs/openapi.yaml", "name": "Submission Service" },
           { "url": "/applications/notification-service/docs/openapi.yaml", "name": "Notification Service" }
@@ -66,5 +102,6 @@ services:
       - ./packages:/usr/share/nginx/html/packages:ro
 
 volumes:
+  user_data:
   assessment_data:
   notification_data:
