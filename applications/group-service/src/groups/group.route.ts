@@ -7,7 +7,13 @@ import {
     parseOptionalJsonBody,
     requireAuthenticatedHeaders
 } from "../shared/middleware";
-import type { AppEnv, UserSystemRole } from "../shared/types";
+import type {
+    AppEnv,
+    GroupMemberRole,
+    JoinRequestStatus,
+    PaginatedResult,
+    UserSystemRole
+} from "../shared/types";
 import {
     createGroup,
     deleteGroupByOwner,
@@ -17,8 +23,7 @@ import {
     listMyGroups,
     transferGroupOwnership,
     updateGroupSettings,
-    type GroupSummary,
-    type PaginatedGroupList
+    type GroupSummary
 } from "./group.core";
 import {
     banGroupUser,
@@ -36,18 +41,15 @@ import {
     type GroupBanRecord,
     type GroupMemberRecord,
     type InternalGroupMembership,
-    type JoinRequestRecord,
-    type PaginatedGroupBans,
-    type PaginatedGroupMembers,
-    type PaginatedJoinRequests
+    type JoinRequestRecord
 } from "./group.membership";
 import {
     BanMemberSchema,
     CreateGroupSchema,
     GroupCodeParamSchema,
-    GroupIdParamSchema,
     GroupRequestParamSchema,
     GroupUserParamSchema,
+    IdParamSchema,
     JoinGroupSchema,
     ListGroupsQuerySchema,
     ListJoinRequestsQuerySchema,
@@ -59,19 +61,11 @@ import {
     UpdateMemberRoleSchema,
     type BanMemberDto,
     type CreateGroupDto,
-    type GroupCodeParamDto,
-    type GroupIdParamDto,
-    type GroupRequestParamDto,
-    type GroupUserParamDto,
-    type JoinGroupDto,
-    type ListGroupsQueryDto,
-    type ListJoinRequestsQueryDto,
-    type ListMembersQueryDto,
-    type PaginationQueryDto,
-    type ReviewJoinRequestDto,
-    type TransferOwnershipDto,
-    type UpdateGroupSettingsDto,
-    type UpdateMemberRoleDto
+    type ListGroupsQuery,
+    type ListJoinRequestsQuery,
+    type ListMembersQuery,
+    type PaginationQuery,
+    type UpdateGroupSettingsDto
 } from "./schemas/group.schema";
 
 function getAuthenticatedUserId(c: Context<AppEnv>): string {
@@ -90,10 +84,10 @@ export function createGroupRoute(): Hono<AppEnv> {
         optionalAuthenticatedHeaders,
         createZodValidator("query", ListGroupsQuerySchema),
         async (c): Promise<Response> => {
-            const query: ListGroupsQueryDto = c.req.valid("query");
+            const query: ListGroupsQuery = c.req.valid("query");
             const viewerId: string | undefined = c.get("userId");
             const em: EntityManager = c.get("em");
-            const result: PaginatedGroupList = await listGroups(query, viewerId, em);
+            const result: PaginatedResult<GroupSummary> = await listGroups(query, viewerId, em);
             return c.json(result, 200);
         }
     );
@@ -117,9 +111,9 @@ export function createGroupRoute(): Hono<AppEnv> {
         createZodValidator("query", PaginationQuerySchema),
         async (c): Promise<Response> => {
             const userId: string = getAuthenticatedUserId(c);
-            const query: PaginationQueryDto = c.req.valid("query");
+            const query: PaginationQuery = c.req.valid("query");
             const em: EntityManager = c.get("em");
-            const result: PaginatedGroupList = await listMyGroups(userId, query, em);
+            const result: PaginatedResult<GroupSummary> = await listMyGroups(userId, query, em);
             return c.json(result, 200);
         }
     );
@@ -129,7 +123,7 @@ export function createGroupRoute(): Hono<AppEnv> {
         optionalAuthenticatedHeaders,
         createZodValidator("param", GroupCodeParamSchema),
         async (c): Promise<Response> => {
-            const params: GroupCodeParamDto = c.req.valid("param");
+            const params: { code: string } = c.req.valid("param");
             const viewerId: string | undefined = c.get("userId");
             const em: EntityManager = c.get("em");
             const result: GroupSummary = await getGroupByCode(params.code, viewerId, em);
@@ -140,9 +134,9 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.get(
         "/:id",
         optionalAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const viewerId: string | undefined = c.get("userId");
             const em: EntityManager = c.get("em");
             const result: GroupSummary = await getGroupById(params.id, viewerId, em);
@@ -153,11 +147,11 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.patch(
         "/:id",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("json", UpdateGroupSettingsSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const payload: UpdateGroupSettingsDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: GroupSummary = await updateGroupSettings(params.id, actorId, payload, em);
@@ -168,10 +162,10 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.delete(
         "/:id",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await deleteGroupByOwner(params.id, actorId, em);
             return c.body(null, 204);
@@ -181,17 +175,17 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.post(
         "/:id/transfer-ownership",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("json", TransferOwnershipSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
-            const payload: TransferOwnershipDto = c.req.valid("json");
+            const params: { id: string } = c.req.valid("param");
+            const payload: { new_owner_id: string } = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: GroupSummary = await transferGroupOwnership(
                 params.id,
                 actorId,
-                payload,
+                payload.new_owner_id,
                 em
             );
             return c.json(result, 200);
@@ -201,13 +195,18 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.post(
         "/:id/join",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const userId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
-            const payload: JoinGroupDto = await parseOptionalJsonBody(c, JoinGroupSchema);
+            const params: { id: string } = c.req.valid("param");
+            const payload: { password?: string } = await parseOptionalJsonBody(c, JoinGroupSchema);
             const em: EntityManager = c.get("em");
-            const result: GroupMemberRecord = await joinGroup(params.id, userId, payload, em);
+            const result: GroupMemberRecord = await joinGroup(
+                params.id,
+                userId,
+                payload.password,
+                em
+            );
             return c.json(result, 201);
         }
     );
@@ -215,10 +214,10 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.post(
         "/:id/leave",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const userId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await leaveGroup(params.id, userId, em);
             return c.body(null, 204);
@@ -228,10 +227,10 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.post(
         "/:id/requests",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const userId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const result: JoinRequestRecord = await requestJoinGroup(params.id, userId, em);
             return c.json(result, 201);
@@ -241,15 +240,15 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.get(
         "/:id/requests",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("query", ListJoinRequestsQuerySchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
             const actorRole: UserSystemRole | undefined = c.get("userRole");
-            const params: GroupIdParamDto = c.req.valid("param");
-            const query: ListJoinRequestsQueryDto = c.req.valid("query");
+            const params: { id: string } = c.req.valid("param");
+            const query: ListJoinRequestsQuery = c.req.valid("query");
             const em: EntityManager = c.get("em");
-            const result: PaginatedJoinRequests = await listJoinRequests(
+            const result: PaginatedResult<JoinRequestRecord> = await listJoinRequests(
                 params.id,
                 actorId,
                 actorRole,
@@ -267,14 +266,16 @@ export function createGroupRoute(): Hono<AppEnv> {
         createZodValidator("json", ReviewJoinRequestSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupRequestParamDto = c.req.valid("param");
-            const payload: ReviewJoinRequestDto = c.req.valid("json");
+            const params: { id: string; requestId: string } = c.req.valid("param");
+            const payload: {
+                decision: JoinRequestStatus.APPROVED | JoinRequestStatus.REJECTED;
+            } = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: JoinRequestRecord = await reviewJoinRequest(
                 params.id,
                 params.requestId,
                 actorId,
-                payload,
+                payload.decision,
                 em
             );
             return c.json(result, 200);
@@ -284,15 +285,15 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.get(
         "/:id/members",
         optionalAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("query", ListMembersQuerySchema),
         async (c): Promise<Response> => {
-            const params: GroupIdParamDto = c.req.valid("param");
-            const query: ListMembersQueryDto = c.req.valid("query");
+            const params: { id: string } = c.req.valid("param");
+            const query: ListMembersQuery = c.req.valid("query");
             const viewerId: string | undefined = c.get("userId");
             const viewerRole: UserSystemRole | undefined = c.get("userRole");
             const em: EntityManager = c.get("em");
-            const result: PaginatedGroupMembers = await listGroupMembers(
+            const result: PaginatedResult<GroupMemberRecord> = await listGroupMembers(
                 params.id,
                 viewerId,
                 viewerRole,
@@ -307,7 +308,7 @@ export function createGroupRoute(): Hono<AppEnv> {
         "/:id/members/:userId",
         createZodValidator("param", GroupUserParamSchema),
         async (c): Promise<Response> => {
-            const params: GroupUserParamDto = c.req.valid("param");
+            const params: { id: string; userId: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const result: InternalGroupMembership = await getInternalMembership(
                 params.id,
@@ -325,14 +326,16 @@ export function createGroupRoute(): Hono<AppEnv> {
         createZodValidator("json", UpdateMemberRoleSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupUserParamDto = c.req.valid("param");
-            const payload: UpdateMemberRoleDto = c.req.valid("json");
+            const params: { id: string; userId: string } = c.req.valid("param");
+            const payload: {
+                role: GroupMemberRole.MEMBER | GroupMemberRole.MODERATOR;
+            } = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: GroupMemberRecord = await updateMemberRole(
                 params.id,
                 params.userId,
                 actorId,
-                payload,
+                payload.role,
                 em
             );
             return c.json(result, 200);
@@ -345,7 +348,7 @@ export function createGroupRoute(): Hono<AppEnv> {
         createZodValidator("param", GroupUserParamSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupUserParamDto = c.req.valid("param");
+            const params: { id: string; userId: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await removeGroupMember(params.id, params.userId, actorId, em);
             return c.body(null, 204);
@@ -355,15 +358,15 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.get(
         "/:id/bans",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("query", PaginationQuerySchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
             const actorRole: UserSystemRole | undefined = c.get("userRole");
-            const params: GroupIdParamDto = c.req.valid("param");
-            const query: PaginationQueryDto = c.req.valid("query");
+            const params: { id: string } = c.req.valid("param");
+            const query: PaginationQuery = c.req.valid("query");
             const em: EntityManager = c.get("em");
-            const result: PaginatedGroupBans = await listGroupBans(
+            const result: PaginatedResult<GroupBanRecord> = await listGroupBans(
                 params.id,
                 actorId,
                 actorRole,
@@ -377,11 +380,11 @@ export function createGroupRoute(): Hono<AppEnv> {
     router.post(
         "/:id/bans",
         requireAuthenticatedHeaders,
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         createZodValidator("json", BanMemberSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const payload: BanMemberDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: GroupBanRecord = await banGroupUser(params.id, actorId, payload, em);
@@ -395,7 +398,7 @@ export function createGroupRoute(): Hono<AppEnv> {
         createZodValidator("param", GroupUserParamSchema),
         async (c): Promise<Response> => {
             const actorId: string = getAuthenticatedUserId(c);
-            const params: GroupUserParamDto = c.req.valid("param");
+            const params: { id: string; userId: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await unbanGroupUser(params.id, params.userId, actorId, em);
             return c.body(null, 204);

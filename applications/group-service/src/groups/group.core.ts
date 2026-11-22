@@ -10,13 +10,13 @@ import {
     GroupMemberRole,
     GroupStatus,
     GroupVisibility,
+    type PaginatedResult,
     type PaginationMeta
 } from "../shared/types";
 import type {
     CreateGroupDto,
-    ListGroupsQueryDto,
-    PaginationQueryDto,
-    TransferOwnershipDto,
+    ListGroupsQuery,
+    PaginationQuery,
     UpdateGroupSettingsDto
 } from "./schemas/group.schema";
 
@@ -37,11 +37,6 @@ export interface GroupSummary {
     updated_at: string;
 }
 
-export interface PaginatedGroupList {
-    items: GroupSummary[];
-    pagination: PaginationMeta;
-}
-
 export function buildPaginationMeta(
     page: number,
     limit: number,
@@ -53,6 +48,61 @@ export function buildPaginationMeta(
         total,
         total_pages: total === 0 ? 0 : Math.ceil(total / limit)
     };
+}
+
+export function toGroupBaseRecord(
+    group: GroupEntity,
+    memberCount: number
+): Omit<GroupSummary, "my_role"> {
+    return {
+        id: group.id,
+        group_code: group.groupCode,
+        name: group.name,
+        description: group.description,
+        visibility: group.visibility,
+        join_policy: group.joinPolicy,
+        owner_id: group.ownerId,
+        status: group.status,
+        member_count: memberCount,
+        created_at: group.createdAt.toISOString(),
+        updated_at: group.updatedAt.toISOString()
+    };
+}
+
+function validateGroupPolicy(
+    visibility: GroupVisibility,
+    joinPolicy: GroupJoinPolicy,
+    passwordInput: string | undefined,
+    hasExistingPasswordHash: boolean
+): void {
+    if (visibility === GroupVisibility.PUBLIC && joinPolicy !== GroupJoinPolicy.OPEN) {
+        throw AppError.badRequest(
+            "INVALID_GROUP_POLICY",
+            "Public groups must use OPEN join policy."
+        );
+    }
+    if (visibility === GroupVisibility.PRIVATE && joinPolicy === GroupJoinPolicy.OPEN) {
+        throw AppError.badRequest(
+            "INVALID_GROUP_POLICY",
+            "Private groups must use APPROVAL or PASSWORD join policy."
+        );
+    }
+    if (
+        joinPolicy === GroupJoinPolicy.PASSWORD &&
+        passwordInput === undefined &&
+        !hasExistingPasswordHash
+    ) {
+        throw AppError.badRequest(
+            "PASSWORD_REQUIRED",
+            "Password is required for PASSWORD join policy."
+        );
+    }
+    if (joinPolicy !== GroupJoinPolicy.PASSWORD && passwordInput !== undefined) {
+        throw AppError.badRequest(
+            "INVALID_GROUP_POLICY",
+            "Password can only be set when join policy is PASSWORD."
+        );
+    }
 }
 
 export async function findActiveGroupOrThrow(
@@ -146,26 +196,16 @@ async function buildGroupSummary(
     }
 
     return {
-        id: group.id,
-        group_code: group.groupCode,
-        name: group.name,
-        description: group.description,
-        visibility: group.visibility,
-        join_policy: group.joinPolicy,
-        owner_id: group.ownerId,
-        status: group.status,
-        member_count: memberCount,
-        my_role: myRole,
-        created_at: group.createdAt.toISOString(),
-        updated_at: group.updatedAt.toISOString()
+        ...toGroupBaseRecord(group, memberCount),
+        my_role: myRole
     };
 }
 
 export async function listGroups(
-    query: ListGroupsQueryDto,
+    query: ListGroupsQuery,
     viewerId: string | undefined,
     em: EntityManager
-): Promise<PaginatedGroupList> {
+): Promise<PaginatedResult<GroupSummary>> {
     const where: FilterQuery<GroupEntity> = {
         deletedAt: null,
         status: GroupStatus.ACTIVE
@@ -203,9 +243,9 @@ export async function listGroups(
 
 export async function listMyGroups(
     userId: string,
-    query: PaginationQueryDto,
+    query: PaginationQuery,
     em: EntityManager
-): Promise<PaginatedGroupList> {
+): Promise<PaginatedResult<GroupSummary>> {
     const memberships: GroupMemberEntity[] = await em.find(
         GroupMemberSchema,
         { userId },
@@ -230,18 +270,8 @@ export async function listMyGroups(
                 group: membership.group.id
             });
             return {
-                id: membership.group.id,
-                group_code: membership.group.groupCode,
-                name: membership.group.name,
-                description: membership.group.description,
-                visibility: membership.group.visibility,
-                join_policy: membership.group.joinPolicy,
-                owner_id: membership.group.ownerId,
-                status: membership.group.status,
-                member_count: memberCount,
-                my_role: membership.role,
-                created_at: membership.group.createdAt.toISOString(),
-                updated_at: membership.group.updatedAt.toISOString()
+                ...toGroupBaseRecord(membership.group, memberCount),
+                my_role: membership.role
             };
         })
     );
@@ -282,6 +312,8 @@ export async function createGroup(
     payload: CreateGroupDto,
     em: EntityManager
 ): Promise<GroupSummary> {
+    validateGroupPolicy(payload.visibility, payload.join_policy, payload.password, false);
+
     const groupCode: string = await generateUniqueGroupCode(em);
     const joinPasswordHash: string | null =
         payload.join_policy === GroupJoinPolicy.PASSWORD && payload.password !== undefined
@@ -329,42 +361,18 @@ export async function updateGroupSettings(
 
     const nextVisibility: GroupVisibility = payload.visibility ?? group.visibility;
     const nextJoinPolicy: GroupJoinPolicy = payload.join_policy ?? group.joinPolicy;
-
-    if (
-        nextVisibility === GroupVisibility.PUBLIC &&
-        nextJoinPolicy !== GroupJoinPolicy.OPEN
-    ) {
-        throw AppError.badRequest(
-            "INVALID_GROUP_POLICY",
-            "Public groups must use OPEN join policy."
-        );
-    }
-    if (
-        nextVisibility === GroupVisibility.PRIVATE &&
-        nextJoinPolicy === GroupJoinPolicy.OPEN
-    ) {
-        throw AppError.badRequest(
-            "INVALID_GROUP_POLICY",
-            "Private groups must use APPROVAL or PASSWORD join policy."
-        );
-    }
+    validateGroupPolicy(
+        nextVisibility,
+        nextJoinPolicy,
+        payload.password,
+        group.joinPasswordHash !== null
+    );
 
     if (nextJoinPolicy === GroupJoinPolicy.PASSWORD) {
         if (payload.password !== undefined) {
             group.joinPasswordHash = await bcrypt.hash(payload.password, BCRYPT_SALT_ROUNDS);
-        } else if (group.joinPasswordHash === null) {
-            throw AppError.badRequest(
-                "PASSWORD_REQUIRED",
-                "Password is required when switching to PASSWORD join policy."
-            );
         }
     } else {
-        if (payload.password !== undefined) {
-            throw AppError.badRequest(
-                "INVALID_GROUP_POLICY",
-                "Password can only be set when join policy is PASSWORD."
-            );
-        }
         group.joinPasswordHash = null;
     }
 
@@ -385,10 +393,10 @@ export async function updateGroupSettings(
 export async function transferGroupOwnership(
     groupId: string,
     actorId: string,
-    payload: TransferOwnershipDto,
+    newOwnerId: string,
     em: EntityManager
 ): Promise<GroupSummary> {
-    if (payload.new_owner_id === actorId) {
+    if (newOwnerId === actorId) {
         throw AppError.badRequest(
             "SELF_TRANSFER_NOT_ALLOWED",
             "You already own this group."
@@ -405,7 +413,7 @@ export async function transferGroupOwnership(
     );
     const nextOwnerMembership: GroupMemberEntity | null = await findGroupMembership(
         group.id,
-        payload.new_owner_id,
+        newOwnerId,
         em
     );
     if (nextOwnerMembership === null) {
@@ -420,7 +428,7 @@ export async function transferGroupOwnership(
     currentOwnerMembership.updatedAt = now;
     nextOwnerMembership.role = GroupMemberRole.OWNER;
     nextOwnerMembership.updatedAt = now;
-    group.ownerId = payload.new_owner_id;
+    group.ownerId = newOwnerId;
     group.updatedAt = now;
     await em.flush();
 

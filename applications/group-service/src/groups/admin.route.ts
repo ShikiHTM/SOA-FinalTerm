@@ -7,24 +7,21 @@ import {
     requireAdminRole,
     requireAuthenticatedHeaders
 } from "../shared/middleware";
-import type { AppEnv } from "../shared/types";
+import type { AppEnv, PaginatedResult } from "../shared/types";
 import {
     deleteGroupByAdmin,
     getGroupForAdmin,
     listGroupsForAdmin,
     updateGroupStatusByAdmin,
-    type AdminGroupRecord,
-    type PaginatedAdminGroups
+    type AdminGroupRecord
 } from "./group.admin";
 import {
-    AdminDeleteGroupSchema,
-    AdminListGroupsQuerySchema,
-    AdminUpdateGroupStatusSchema,
-    GroupIdParamSchema,
-    type AdminDeleteGroupDto,
-    type AdminListGroupsQueryDto,
-    type AdminUpdateGroupStatusDto,
-    type GroupIdParamDto
+    AdminDeleteSchema,
+    AdminStatusSchema,
+    IdParamSchema,
+    ListGroupsQuerySchema,
+    type AdminStatusDto,
+    type ListGroupsQuery
 } from "./schemas/group.schema";
 
 function getAdminUserId(c: Context<AppEnv>): string {
@@ -43,20 +40,20 @@ export function createAdminRoute(): Hono<AppEnv> {
 
     router.get(
         "/",
-        createZodValidator("query", AdminListGroupsQuerySchema),
+        createZodValidator("query", ListGroupsQuerySchema),
         async (c): Promise<Response> => {
-            const query: AdminListGroupsQueryDto = c.req.valid("query");
+            const query: ListGroupsQuery = c.req.valid("query");
             const em: EntityManager = c.get("em");
-            const result: PaginatedAdminGroups = await listGroupsForAdmin(query, em);
+            const result: PaginatedResult<AdminGroupRecord> = await listGroupsForAdmin(query, em);
             return c.json(result, 200);
         }
     );
 
     router.get(
         "/:id",
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
-            const params: GroupIdParamDto = c.req.valid("param");
+            const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const result: AdminGroupRecord = await getGroupForAdmin(params.id, em);
             return c.json(result, 200);
@@ -65,12 +62,12 @@ export function createAdminRoute(): Hono<AppEnv> {
 
     router.patch(
         "/:id/status",
-        createZodValidator("param", GroupIdParamSchema),
-        createZodValidator("json", AdminUpdateGroupStatusSchema),
+        createZodValidator("param", IdParamSchema),
+        createZodValidator("json", AdminStatusSchema),
         async (c): Promise<Response> => {
             const adminUserId: string = getAdminUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
-            const payload: AdminUpdateGroupStatusDto = c.req.valid("json");
+            const params: { id: string } = c.req.valid("param");
+            const payload: AdminStatusDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: AdminGroupRecord = await updateGroupStatusByAdmin(
                 params.id,
@@ -84,16 +81,13 @@ export function createAdminRoute(): Hono<AppEnv> {
 
     router.delete(
         "/:id",
-        createZodValidator("param", GroupIdParamSchema),
+        createZodValidator("param", IdParamSchema),
         async (c): Promise<Response> => {
             const adminUserId: string = getAdminUserId(c);
-            const params: GroupIdParamDto = c.req.valid("param");
-            const payload: AdminDeleteGroupDto = await parseOptionalJsonBody(
-                c,
-                AdminDeleteGroupSchema
-            );
+            const params: { id: string } = c.req.valid("param");
+            const payload: { reason?: string } = await parseOptionalJsonBody(c, AdminDeleteSchema);
             const em: EntityManager = c.get("em");
-            await deleteGroupByAdmin(params.id, adminUserId, payload, em);
+            await deleteGroupByAdmin(params.id, adminUserId, payload.reason, em);
             return c.body(null, 204);
         }
     );

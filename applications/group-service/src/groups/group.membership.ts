@@ -16,7 +16,7 @@ import {
     GroupVisibility,
     JoinRequestStatus,
     UserSystemRole,
-    type PaginationMeta
+    type PaginatedResult
 } from "../shared/types";
 import {
     buildPaginationMeta,
@@ -27,12 +27,9 @@ import {
 } from "./group.core";
 import type {
     BanMemberDto,
-    JoinGroupDto,
-    ListJoinRequestsQueryDto,
-    ListMembersQueryDto,
-    PaginationQueryDto,
-    ReviewJoinRequestDto,
-    UpdateMemberRoleDto
+    ListJoinRequestsQuery,
+    ListMembersQuery,
+    PaginationQuery
 } from "./schemas/group.schema";
 
 export interface GroupMemberRecord {
@@ -41,11 +38,6 @@ export interface GroupMemberRecord {
     role: GroupMemberRole;
     joined_at: string;
     updated_at: string;
-}
-
-export interface PaginatedGroupMembers {
-    items: GroupMemberRecord[];
-    pagination: PaginationMeta;
 }
 
 export interface JoinRequestRecord {
@@ -58,11 +50,6 @@ export interface JoinRequestRecord {
     created_at: string;
 }
 
-export interface PaginatedJoinRequests {
-    items: JoinRequestRecord[];
-    pagination: PaginationMeta;
-}
-
 export interface GroupBanRecord {
     id: string;
     group_id: string;
@@ -70,11 +57,6 @@ export interface GroupBanRecord {
     reason: string | null;
     banned_by: string;
     banned_at: string;
-}
-
-export interface PaginatedGroupBans {
-    items: GroupBanRecord[];
-    pagination: PaginationMeta;
 }
 
 export interface InternalGroupMembership {
@@ -156,7 +138,7 @@ async function requireModeratorOrAdminView(
 export async function joinGroup(
     groupId: string,
     userId: string,
-    payload: JoinGroupDto,
+    password: string | undefined,
     em: EntityManager
 ): Promise<GroupMemberRecord> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
@@ -184,12 +166,12 @@ export async function joinGroup(
     }
 
     if (group.joinPolicy === GroupJoinPolicy.PASSWORD) {
-        if (!payload.password || group.joinPasswordHash === null) {
+        if (!password || group.joinPasswordHash === null) {
             throw AppError.forbidden("INVALID_GROUP_PASSWORD", "Invalid group password.");
         }
-        const passwordMatches = bcrypt.compare(
-            payload.password,
-            group.joinPasswordHash!
+        const passwordMatches: boolean = await bcrypt.compare(
+            password,
+            group.joinPasswordHash
         );
         if (!passwordMatches) {
             throw AppError.forbidden("INVALID_GROUP_PASSWORD", "Invalid group password.");
@@ -287,9 +269,9 @@ export async function listGroupMembers(
     groupId: string,
     viewerId: string | undefined,
     viewerSystemRole: UserSystemRole | undefined,
-    query: ListMembersQueryDto,
+    query: ListMembersQuery,
     em: EntityManager
-): Promise<PaginatedGroupMembers> {
+): Promise<PaginatedResult<GroupMemberRecord>> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
     if (
         group.visibility === GroupVisibility.PRIVATE &&
@@ -344,9 +326,9 @@ export async function listJoinRequests(
     groupId: string,
     actorId: string,
     actorSystemRole: UserSystemRole | undefined,
-    query: ListJoinRequestsQueryDto,
+    query: ListJoinRequestsQuery,
     em: EntityManager
-): Promise<PaginatedJoinRequests> {
+): Promise<PaginatedResult<JoinRequestRecord>> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
     await requireModeratorOrAdminView(
         group.id,
@@ -386,7 +368,7 @@ export async function reviewJoinRequest(
     groupId: string,
     requestId: string,
     actorId: string,
-    payload: ReviewJoinRequestDto,
+    decision: JoinRequestStatus.APPROVED | JoinRequestStatus.REJECTED,
     em: EntityManager
 ): Promise<JoinRequestRecord> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
@@ -413,7 +395,7 @@ export async function reviewJoinRequest(
         );
     }
 
-    if (payload.decision === JoinRequestStatus.APPROVED) {
+    if (decision === JoinRequestStatus.APPROVED) {
         const activeBan: GroupBanEntity | null = await findActiveBan(
             group.id,
             joinRequest.userId,
@@ -440,7 +422,7 @@ export async function reviewJoinRequest(
         }
     }
 
-    joinRequest.status = payload.decision;
+    joinRequest.status = decision;
     joinRequest.reviewedBy = actorId;
     joinRequest.reviewedAt = new Date();
     await em.flush();
@@ -493,7 +475,7 @@ export async function updateMemberRole(
     groupId: string,
     targetUserId: string,
     actorId: string,
-    payload: UpdateMemberRoleDto,
+    role: GroupMemberRole.MEMBER | GroupMemberRole.MODERATOR,
     em: EntityManager
 ): Promise<GroupMemberRecord> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
@@ -521,7 +503,7 @@ export async function updateMemberRole(
         );
     }
 
-    targetMembership.role = payload.role;
+    targetMembership.role = role;
     targetMembership.updatedAt = new Date();
     await em.flush();
 
@@ -610,9 +592,9 @@ export async function listGroupBans(
     groupId: string,
     actorId: string,
     actorSystemRole: UserSystemRole | undefined,
-    query: PaginationQueryDto,
+    query: PaginationQuery,
     em: EntityManager
-): Promise<PaginatedGroupBans> {
+): Promise<PaginatedResult<GroupBanRecord>> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
     await requireModeratorOrAdminView(
         group.id,

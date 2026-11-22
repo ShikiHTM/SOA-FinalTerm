@@ -1,43 +1,20 @@
 import type { EntityManager, FilterQuery } from "@mikro-orm/postgresql";
 import { GroupMemberSchema } from "../db/entities/group-member.entity";
 import { GroupSchema, type GroupEntity } from "../db/entities/group.entity";
-import {
-    GroupJoinPolicy,
-    GroupStatus,
-    GroupVisibility,
-    type PaginationMeta
-} from "../shared/types";
+import { GroupStatus, type PaginatedResult } from "../shared/types";
 import {
     buildPaginationMeta,
     findActiveGroupOrThrow,
-    softDeleteGroupWithMemberships
+    softDeleteGroupWithMemberships,
+    toGroupBaseRecord,
+    type GroupSummary
 } from "./group.core";
-import type {
-    AdminDeleteGroupDto,
-    AdminListGroupsQueryDto,
-    AdminUpdateGroupStatusDto
-} from "./schemas/group.schema";
+import type { AdminStatusDto, ListGroupsQuery } from "./schemas/group.schema";
 
-export interface AdminGroupRecord {
-    id: string;
-    group_code: string;
-    name: string;
-    description: string;
-    visibility: GroupVisibility;
-    join_policy: GroupJoinPolicy;
-    owner_id: string;
-    status: GroupStatus;
-    member_count: number;
+export interface AdminGroupRecord extends Omit<GroupSummary, "my_role"> {
     moderation_reason: string | null;
     moderated_by: string | null;
     moderated_at: string | null;
-    created_at: string;
-    updated_at: string;
-}
-
-export interface PaginatedAdminGroups {
-    items: AdminGroupRecord[];
-    pagination: PaginationMeta;
 }
 
 async function toAdminGroupRecord(
@@ -46,27 +23,17 @@ async function toAdminGroupRecord(
 ): Promise<AdminGroupRecord> {
     const memberCount: number = await em.count(GroupMemberSchema, { group: group.id });
     return {
-        id: group.id,
-        group_code: group.groupCode,
-        name: group.name,
-        description: group.description,
-        visibility: group.visibility,
-        join_policy: group.joinPolicy,
-        owner_id: group.ownerId,
-        status: group.status,
-        member_count: memberCount,
+        ...toGroupBaseRecord(group, memberCount),
         moderation_reason: group.moderationReason ?? null,
         moderated_by: group.moderatedBy ?? null,
-        moderated_at: group.moderatedAt ? group.moderatedAt.toISOString() : null,
-        created_at: group.createdAt.toISOString(),
-        updated_at: group.updatedAt.toISOString()
+        moderated_at: group.moderatedAt ? group.moderatedAt.toISOString() : null
     };
 }
 
 export async function listGroupsForAdmin(
-    query: AdminListGroupsQueryDto,
+    query: ListGroupsQuery,
     em: EntityManager
-): Promise<PaginatedAdminGroups> {
+): Promise<PaginatedResult<AdminGroupRecord>> {
     const where: FilterQuery<GroupEntity> = {
         deletedAt: null
     };
@@ -113,7 +80,7 @@ export async function getGroupForAdmin(
 export async function updateGroupStatusByAdmin(
     groupId: string,
     adminUserId: string,
-    payload: AdminUpdateGroupStatusDto,
+    payload: AdminStatusDto,
     em: EntityManager
 ): Promise<AdminGroupRecord> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
@@ -132,13 +99,13 @@ export async function updateGroupStatusByAdmin(
 export async function deleteGroupByAdmin(
     groupId: string,
     adminUserId: string,
-    payload: AdminDeleteGroupDto,
+    reason: string | undefined,
     em: EntityManager
 ): Promise<void> {
     const group: GroupEntity = await findActiveGroupOrThrow(groupId, em);
     const now: Date = new Date();
-    if (payload.reason !== undefined) {
-        group.moderationReason = payload.reason;
+    if (reason !== undefined) {
+        group.moderationReason = reason;
     }
     group.moderatedBy = adminUserId;
     group.moderatedAt = now;

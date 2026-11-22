@@ -12,16 +12,13 @@ import {
 import { GroupMemberSchema, type GroupMemberEntity } from "../src/db/entities/group-member.entity";
 import { GroupSchema, type GroupEntity } from "../src/db/entities/group.entity";
 import { closeDB, createMikroOrmConfig, forkEm, getORM } from "../src/db/orm";
-import type { AdminGroupRecord, PaginatedAdminGroups } from "../src/groups/group.admin";
-import type { GroupSummary, PaginatedGroupList } from "../src/groups/group.core";
+import type { AdminGroupRecord } from "../src/groups/group.admin";
+import type { GroupSummary } from "../src/groups/group.core";
 import type {
     GroupBanRecord,
     GroupMemberRecord,
     InternalGroupMembership,
-    JoinRequestRecord,
-    PaginatedGroupBans,
-    PaginatedGroupMembers,
-    PaginatedJoinRequests
+    JoinRequestRecord
 } from "../src/groups/group.membership";
 import type { EnvConfig } from "../src/shared/env";
 import {
@@ -31,6 +28,7 @@ import {
     GroupVisibility,
     JoinRequestStatus,
     UserSystemRole,
+    type PaginatedResult,
     type PaginationMeta
 } from "../src/shared/types";
 
@@ -523,7 +521,8 @@ describe("group-service ORM, CRUD, membership policies, roles, bans, and admin r
             }
         );
         assert.equal(browseRes.status, 200);
-        const browseBody: PaginatedGroupList = (await browseRes.json()) as PaginatedGroupList;
+        const browseBody: PaginatedResult<GroupSummary> =
+            (await browseRes.json()) as PaginatedResult<GroupSummary>;
         assert.equal(browseBody.items.length, 1);
         assert.equal(browseBody.items[0].my_role, null);
 
@@ -545,7 +544,8 @@ describe("group-service ORM, CRUD, membership policies, roles, bans, and admin r
             }
         });
         assert.equal(myGroupsRes.status, 200);
-        const myGroupsBody: PaginatedGroupList = (await myGroupsRes.json()) as PaginatedGroupList;
+        const myGroupsBody: PaginatedResult<GroupSummary> =
+            (await myGroupsRes.json()) as PaginatedResult<GroupSummary>;
         assert.equal(myGroupsBody.items.length, 2);
         assert.deepEqual(myGroupsBody.pagination, {
             page: 1,
@@ -704,7 +704,8 @@ describe("group-service ORM, CRUD, membership policies, roles, bans, and admin r
             }
         );
         assert.equal(listReqRes.status, 200);
-        const reqList: PaginatedJoinRequests = (await listReqRes.json()) as PaginatedJoinRequests;
+        const reqList: PaginatedResult<JoinRequestRecord> =
+            (await listReqRes.json()) as PaginatedResult<JoinRequestRecord>;
         assert.equal(reqList.items.length, 1);
 
         const approveRes: Response = await app.request(
@@ -817,7 +818,8 @@ describe("group-service ORM, CRUD, membership policies, roles, bans, and admin r
             }
         );
         assert.equal(listBansRes.status, 200);
-        const bansBody: PaginatedGroupBans = (await listBansRes.json()) as PaginatedGroupBans;
+        const bansBody: PaginatedResult<GroupBanRecord> =
+            (await listBansRes.json()) as PaginatedResult<GroupBanRecord>;
         assert.equal(bansBody.items.length, 1);
 
         const unbanRes: Response = await app.request(
@@ -1008,8 +1010,8 @@ describe("group-service ORM, CRUD, membership policies, roles, bans, and admin r
                 headers: { "X-Internal-Secret": env.internalServiceSecret }
             }
         );
-        const membersList: PaginatedGroupMembers =
-            (await membersListRes.json()) as PaginatedGroupMembers;
+        const membersList: PaginatedResult<GroupMemberRecord> =
+            (await membersListRes.json()) as PaginatedResult<GroupMemberRecord>;
         assert.equal(membersList.items.length, 2);
 
         const newOwnerDeleteRes: Response = await app.request(
@@ -1092,8 +1094,8 @@ describe("group-service ORM, CRUD, membership policies, roles, bans, and admin r
             }
         );
         assert.equal(adminListRes.status, 200);
-        const adminList: PaginatedAdminGroups =
-            (await adminListRes.json()) as PaginatedAdminGroups;
+        const adminList: PaginatedResult<AdminGroupRecord> =
+            (await adminListRes.json()) as PaginatedResult<AdminGroupRecord>;
         assert.equal(adminList.items.length, 1);
 
         const adminGetRes: Response = await app.request(

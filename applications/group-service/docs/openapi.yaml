@@ -177,7 +177,7 @@ components:
           type: integer
           minimum: 0
 
-    GroupSummary:
+    GroupBase:
       type: object
       required:
         - id
@@ -189,7 +189,6 @@ components:
         - owner_id
         - status
         - member_count
-        - my_role
         - created_at
         - updated_at
       properties:
@@ -215,17 +214,25 @@ components:
         member_count:
           type: integer
           minimum: 0
-        my_role:
-          allOf:
-            - $ref: '#/components/schemas/GroupMemberRole'
-          nullable: true
-          description: Current viewer role in the group, or null when not a member.
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    GroupSummary:
+      allOf:
+        - $ref: '#/components/schemas/GroupBase'
+        - type: object
+          required:
+            - my_role
+          properties:
+            my_role:
+              allOf:
+                - $ref: '#/components/schemas/GroupMemberRole'
+              nullable: true
+              description: Current viewer role in the group, or null when not a member.
 
     PaginatedGroupList:
       type: object
@@ -501,61 +508,25 @@ components:
           type: boolean
 
     AdminGroupRecord:
-      type: object
-      required:
-        - id
-        - group_code
-        - name
-        - description
-        - visibility
-        - join_policy
-        - owner_id
-        - status
-        - member_count
-        - moderation_reason
-        - moderated_by
-        - moderated_at
-        - created_at
-        - updated_at
-      properties:
-        id:
-          type: string
-          format: uuid
-        group_code:
-          type: string
-        name:
-          type: string
-        description:
-          type: string
-        visibility:
-          $ref: '#/components/schemas/GroupVisibility'
-        join_policy:
-          $ref: '#/components/schemas/GroupJoinPolicy'
-        owner_id:
-          type: string
-          format: uuid
-        status:
-          $ref: '#/components/schemas/GroupStatus'
-        member_count:
-          type: integer
-          minimum: 0
-        moderation_reason:
-          type: string
-          nullable: true
-        moderated_by:
-          type: string
-          format: uuid
-          nullable: true
-        moderated_at:
-          type: string
-          format: date-time
-          nullable: true
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
+      allOf:
+        - $ref: '#/components/schemas/GroupBase'
+        - type: object
+          required:
+            - moderation_reason
+            - moderated_by
+            - moderated_at
+          properties:
+            moderation_reason:
+              type: string
+              nullable: true
+            moderated_by:
+              type: string
+              format: uuid
+              nullable: true
+            moderated_at:
+              type: string
+              format: date-time
+              nullable: true
 
     PaginatedAdminGroups:
       type: object
