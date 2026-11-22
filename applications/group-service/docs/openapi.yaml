@@ -272,7 +272,7 @@ components:
           format: password
           minLength: 6
           maxLength: 128
-          description: Required only when join_policy is PASSWORD.
+          description: Required when join_policy is PASSWORD; omit for OPEN and APPROVAL.
 
     UpdateGroupSettingsRequest:
       type: object
@@ -657,6 +657,29 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/CreateGroupRequest'
+            examples:
+              publicGroup:
+                summary: Public open group
+                value:
+                  name: Distributed Systems Fall
+                  description: Open study group
+                  visibility: PUBLIC
+                  join_policy: OPEN
+              privateApprovalGroup:
+                summary: Private group requiring moderator approval
+                value:
+                  name: Research Lab
+                  description: Requires moderator approval
+                  visibility: PRIVATE
+                  join_policy: APPROVAL
+              privatePasswordGroup:
+                summary: Private password-protected group
+                value:
+                  name: Private Exam Prep
+                  description: Shared password group
+                  visibility: PRIVATE
+                  join_policy: PASSWORD
+                  password: GroupPass123
       responses:
         '201':
           description: Group created.
@@ -773,6 +796,23 @@ paths:
           application/json:
             schema:
               $ref: '#/components/schemas/UpdateGroupSettingsRequest'
+            examples:
+              updateMetadata:
+                summary: Update group metadata
+                value:
+                  name: Distributed Systems Fall
+                  description: Updated group description
+              switchToPrivatePassword:
+                summary: Switch to private password-protected group
+                value:
+                  visibility: PRIVATE
+                  join_policy: PASSWORD
+                  password: NewPassword123
+              switchToPublic:
+                summary: Switch to public open group
+                value:
+                  visibility: PUBLIC
+                  join_policy: OPEN
       responses:
         '200':
           description: Group settings updated.
