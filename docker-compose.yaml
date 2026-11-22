@@ -286,7 +286,7 @@ services:
       CONTEST_SERVICE_URL: http://contest_service:8004
       SUBMISSION_SERVICE_URL: http://submission_service:8005
       NOTIFICATION_SERVICE_URL: http://notification_service:3037
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173,http://localhost:8080,http://127.0.0.1:8080}
     ports:
       - 3000:3000
     depends_on:
@@ -296,6 +296,24 @@ services:
       - contest_service
       - submission_service
       - notification_service
+    restart: on-failure
+
+  frontend:
+    build:
+      context: .
+      dockerfile: applications/frontend/Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+        VITE_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+      VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      VITE_GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+    ports:
+      - ${FRONTEND_PORT:-5173}:80
+    depends_on:
+      - api_gateway
     restart: on-failure
 
   swagger_ui:
