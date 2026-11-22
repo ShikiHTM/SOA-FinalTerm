@@ -1,0 +1,1407 @@
+openapi: 3.0.3
+info:
+  title: Group Service API Contract
+  version: 1.0.0
+  description: API for learning group discovery, membership, access policies, and moderation.
+
+servers:
+  - url: http://localhost:8002
+    description: Local Dev Server
+  - url: http://group_service:8002
+    description: Docker Compose Internal Network
+
+tags:
+  - name: Groups
+    description: Learning group discovery, creation, settings, and ownership transfer.
+  - name: Members
+    description: Joining, join requests, member management, and group bans.
+  - name: Admin
+    description: Platform administrator group search and moderation.
+  - name: Service
+    description: Internal group membership queries for other services.
+  - name: Observability
+    description: Service health status.
+
+components:
+  parameters:
+    XInternalSecret:
+      in: header
+      name: X-Internal-Secret
+      required: true
+      schema:
+        type: string
+      description: Shared secret for internal service authentication.
+
+    XUserId:
+      in: header
+      name: X-User-Id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Authenticated user ID.
+
+    XUserRole:
+      in: header
+      name: X-User-Role
+      required: true
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Authenticated user role.
+
+    OptionalXUserId:
+      in: header
+      name: X-User-Id
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Optional authenticated viewer user ID.
+
+    OptionalXUserRole:
+      in: header
+      name: X-User-Role
+      required: false
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Optional authenticated viewer role.
+
+    GroupIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target group UUID.
+
+    GroupCodeParam:
+      in: path
+      name: code
+      required: true
+      schema:
+        type: string
+        minLength: 4
+        maxLength: 32
+        pattern: '^[a-zA-Z0-9-]+$'
+      description: Unique group invitation code.
+
+    UserIdParam:
+      in: path
+      name: userId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target user UUID.
+
+    RequestIdParam:
+      in: path
+      name: requestId
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Join request UUID.
+
+    PageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: 1-based page number.
+
+    LimitQuery:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Maximum number of items per page.
+
+  schemas:
+    UserSystemRole:
+      type: string
+      enum: [USER, ADMIN]
+      description: System role of a user.
+
+    GroupVisibility:
+      type: string
+      enum: [PUBLIC, PRIVATE]
+      description: Group visibility mode.
+
+    GroupJoinPolicy:
+      type: string
+      enum: [OPEN, APPROVAL, PASSWORD]
+      description: Rule controlling how users join the group.
+
+    GroupStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED]
+      description: Lifecycle status of the group.
+
+    GroupMemberRole:
+      type: string
+      enum: [MEMBER, MODERATOR, OWNER]
+      description: Role of a member inside the group.
+
+    JoinRequestStatus:
+      type: string
+      enum: [PENDING, APPROVED, REJECTED]
+      description: Decision state of a group join request.
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - limit
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+
+    GroupSummary:
+      type: object
+      required:
+        - id
+        - group_code
+        - name
+        - description
+        - visibility
+        - join_policy
+        - owner_id
+        - status
+        - member_count
+        - my_role
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_code:
+          type: string
+          example: A1B2C3D4
+        name:
+          type: string
+        description:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/GroupVisibility'
+        join_policy:
+          $ref: '#/components/schemas/GroupJoinPolicy'
+        owner_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/GroupStatus'
+        member_count:
+          type: integer
+          minimum: 0
+        my_role:
+          allOf:
+            - $ref: '#/components/schemas/GroupMemberRole'
+          nullable: true
+          description: Current viewer role in the group, or null when not a member.
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginatedGroupList:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupSummary'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    CreateGroupRequest:
+      type: object
+      required:
+        - name
+        - visibility
+        - join_policy
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+          example: Distributed Systems Fall
+        description:
+          type: string
+          maxLength: 2000
+          default: ""
+        visibility:
+          $ref: '#/components/schemas/GroupVisibility'
+        join_policy:
+          $ref: '#/components/schemas/GroupJoinPolicy'
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 128
+          description: Required only when join_policy is PASSWORD.
+
+    UpdateGroupSettingsRequest:
+      type: object
+      minProperties: 1
+      properties:
+        name:
+          type: string
+          minLength: 2
+          maxLength: 150
+        description:
+          type: string
+          maxLength: 2000
+        visibility:
+          $ref: '#/components/schemas/GroupVisibility'
+        join_policy:
+          $ref: '#/components/schemas/GroupJoinPolicy'
+        password:
+          type: string
+          format: password
+          minLength: 6
+          maxLength: 128
+
+    TransferOwnershipRequest:
+      type: object
+      required:
+        - new_owner_id
+      properties:
+        new_owner_id:
+          type: string
+          format: uuid
+
+    JoinGroupRequest:
+      type: object
+      properties:
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 128
+          description: Required when joining a PASSWORD-protected group.
+
+    GroupMemberRecord:
+      type: object
+      required:
+        - group_id
+        - user_id
+        - role
+        - joined_at
+        - updated_at
+      properties:
+        group_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        role:
+          $ref: '#/components/schemas/GroupMemberRole'
+        joined_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginatedGroupMembers:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupMemberRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    UpdateMemberRoleRequest:
+      type: object
+      required:
+        - role
+      properties:
+        role:
+          type: string
+          enum: [MEMBER, MODERATOR]
+
+    JoinRequestRecord:
+      type: object
+      required:
+        - id
+        - group_id
+        - user_id
+        - status
+        - reviewed_by
+        - reviewed_at
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/JoinRequestStatus'
+        reviewed_by:
+          type: string
+          format: uuid
+          nullable: true
+        reviewed_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    PaginatedJoinRequests:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/JoinRequestRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ReviewJoinRequestRequest:
+      type: object
+      required:
+        - decision
+      properties:
+        decision:
+          type: string
+          enum: [APPROVED, REJECTED]
+
+    BanMemberRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    GroupBanRecord:
+      type: object
+      required:
+        - id
+        - group_id
+        - user_id
+        - reason
+        - banned_by
+        - banned_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        reason:
+          type: string
+          nullable: true
+        banned_by:
+          type: string
+          format: uuid
+        banned_at:
+          type: string
+          format: date-time
+
+    PaginatedGroupBans:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupBanRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    InternalGroupMembership:
+      type: object
+      required:
+        - group_id
+        - user_id
+        - group_status
+        - visibility
+        - is_member
+        - is_banned
+        - role
+        - can_manage
+        - is_owner
+      properties:
+        group_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        group_status:
+          $ref: '#/components/schemas/GroupStatus'
+        visibility:
+          $ref: '#/components/schemas/GroupVisibility'
+        is_member:
+          type: boolean
+        is_banned:
+          type: boolean
+        role:
+          allOf:
+            - $ref: '#/components/schemas/GroupMemberRole'
+          nullable: true
+        can_manage:
+          type: boolean
+        is_owner:
+          type: boolean
+
+    AdminGroupRecord:
+      type: object
+      required:
+        - id
+        - group_code
+        - name
+        - description
+        - visibility
+        - join_policy
+        - owner_id
+        - status
+        - member_count
+        - moderation_reason
+        - moderated_by
+        - moderated_at
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_code:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/GroupVisibility'
+        join_policy:
+          $ref: '#/components/schemas/GroupJoinPolicy'
+        owner_id:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/GroupStatus'
+        member_count:
+          type: integer
+          minimum: 0
+        moderation_reason:
+          type: string
+          nullable: true
+        moderated_by:
+          type: string
+          format: uuid
+          nullable: true
+        moderated_at:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginatedAdminGroups:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminGroupRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AdminUpdateGroupStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/GroupStatus'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Required when status is SUSPENDED.
+
+    AdminDeleteGroupRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: group-service
+
+    ErrorResponse:
+      $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+
+  responses:
+    Conflict:
+      description: '409 Conflict - Resource state conflicts with this operation.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+paths:
+  /health:
+    get:
+      tags:
+        - Observability
+      summary: Check service health
+      description: Returns service health status.
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/internal/groups:
+    get:
+      tags:
+        - Groups
+      summary: Browse available groups
+      description: Returns a paginated list of active learning groups with optional keyword and visibility filtering.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Case-insensitive keyword matched against group name, description, or code.
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            $ref: '#/components/schemas/GroupVisibility'
+          description: Optional visibility filter.
+      responses:
+        '200':
+          description: Paginated group list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGroupList'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Groups
+      summary: Create a group
+      description: Creates a new learning group with a generated unique group code and assigns the caller as group owner.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateGroupRequest'
+      responses:
+        '201':
+          description: Group created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/me:
+    get:
+      tags:
+        - Groups
+      summary: List joined groups
+      description: Returns a paginated list of groups that the authenticated user belongs to.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Joined groups retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGroupList'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/code/{code}:
+    get:
+      tags:
+        - Groups
+      summary: Lookup group by code
+      description: Returns group details matching the provided invitation code.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/GroupCodeParam'
+      responses:
+        '200':
+          description: Group retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}:
+    get:
+      tags:
+        - Groups
+      summary: Get group details
+      description: Returns public overview and membership role for a group by ID.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      responses:
+        '200':
+          description: Group retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    patch:
+      tags:
+        - Groups
+      summary: Update group settings
+      description: Updates group metadata, visibility, or join policy for an active group when invoked by the group owner.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateGroupSettingsRequest'
+      responses:
+        '200':
+          description: Group settings updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Groups
+      summary: Delete group
+      description: Deletes a group and clears its memberships when invoked by the group owner.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      responses:
+        '204':
+          description: Group deleted.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/transfer-ownership:
+    post:
+      tags:
+        - Groups
+      summary: Transfer group ownership
+      description: Reassigns group owner privileges to an existing member and demotes the previous owner to moderator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransferOwnershipRequest'
+      responses:
+        '200':
+          description: Ownership transferred.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/join:
+    post:
+      tags:
+        - Members
+      summary: Join a group
+      description: Adds the authenticated user to an open group or a password-protected group upon valid password verification.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/JoinGroupRequest'
+      responses:
+        '201':
+          description: Joined group as a member.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMemberRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/leave:
+    post:
+      tags:
+        - Members
+      summary: Leave a group
+      description: Removes the authenticated non-owner member from the group.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      responses:
+        '204':
+          description: Left group successfully.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/requests:
+    post:
+      tags:
+        - Members
+      summary: Request to join private group
+      description: Submits a pending membership request for a group requiring approval.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      responses:
+        '201':
+          description: Join request submitted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinRequestRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    get:
+      tags:
+        - Members
+      summary: List group join requests
+      description: Returns paginated join requests for group moderators, owner, or system administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/JoinRequestStatus'
+          description: Optional request status filter.
+      responses:
+        '200':
+          description: Join requests retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJoinRequests'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/requests/{requestId}:
+    patch:
+      tags:
+        - Members
+      summary: Review join request
+      description: Approves or rejects a pending group join request when invoked by a moderator or owner.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/RequestIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReviewJoinRequestRequest'
+      responses:
+        '200':
+          description: Join request updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JoinRequestRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/members:
+    get:
+      tags:
+        - Members
+      summary: List group members
+      description: Returns paginated group members; private groups require existing group membership or administrator access.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: role
+          required: false
+          schema:
+            $ref: '#/components/schemas/GroupMemberRole'
+          description: Optional member role filter.
+      responses:
+        '200':
+          description: Group members retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGroupMembers'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/members/{userId}:
+    get:
+      tags:
+        - Service
+      summary: Check internal group membership
+      description: Returns a user's membership, ban status, and management permissions inside the specified group.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Membership state retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalGroupMembership'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Members
+      summary: Remove member from group
+      description: Removes a target member from the group when invoked by an authorized moderator or owner.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '204':
+          description: Member removed.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/members/{userId}/role:
+    patch:
+      tags:
+        - Members
+      summary: Assign or revoke group moderator
+      description: Updates a group member's role between member and moderator when invoked by the group owner.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemberRoleRequest'
+      responses:
+        '200':
+          description: Member role updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupMemberRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/bans:
+    get:
+      tags:
+        - Members
+      summary: List banned users
+      description: Returns active bans in the group for moderators, owner, or system administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Banned users retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGroupBans'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Members
+      summary: Ban user from group
+      description: Removes a user from the group, rejects pending requests, and prevents re-joining.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BanMemberRequest'
+      responses:
+        '201':
+          description: User banned from group.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupBanRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/groups/{id}/bans/{userId}:
+    delete:
+      tags:
+        - Members
+      summary: Unban user from group
+      description: Revokes an active group ban for a user so they may join again.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '204':
+          description: User unbanned.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/groups:
+    get:
+      tags:
+        - Admin
+      summary: List all groups
+      description: Returns a paginated, searchable, and filterable list of learning groups for administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Case-insensitive keyword matched against group name, description, or code.
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/GroupStatus'
+          description: Optional group status filter.
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            $ref: '#/components/schemas/GroupVisibility'
+          description: Optional visibility filter.
+      responses:
+        '200':
+          description: Admin group list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminGroups'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/groups/{id}:
+    get:
+      tags:
+        - Admin
+      summary: Get admin group details
+      description: Returns full group metadata and moderation status for administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      responses:
+        '200':
+          description: Group details retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminGroupRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Admin
+      summary: Moderate delete group
+      description: Deletes a group and clears its memberships on behalf of a platform administrator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDeleteGroupRequest'
+      responses:
+        '204':
+          description: Group deleted.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/groups/{id}/status:
+    patch:
+      tags:
+        - Admin
+      summary: Suspend or restore group
+      description: Updates a group's operational status between active and suspended when invoked by an administrator.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/GroupIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateGroupStatusRequest'
+      responses:
+        '200':
+          description: Group status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminGroupRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'

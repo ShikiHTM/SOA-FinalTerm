@@ -35,6 +35,37 @@ services:
       - 3031:3031
     restart: on-failure
 
+  group_pgsql_db:
+    image: postgres:18.6-alpine
+    container_name: group_pgsql_db
+    volumes:
+      - group_data:/var/lib/postgresql
+    environment:
+      - POSTGRES_USER=${GROUP_DB_USER}
+      - POSTGRES_PASSWORD=${GROUP_DB_PASSWORD}
+      - POSTGRES_DB=${GROUP_DB_NAME}
+    ports:
+      - 5002:5432
+
+  group_service:
+    build:
+      context: .
+      dockerfile: applications/group-service/Dockerfile
+    environment:
+      PORT: 8002
+      GROUP_DB_HOST: group_pgsql_db
+      GROUP_DB_PORT: 5432
+      GROUP_DB_USER: ${GROUP_DB_USER}
+      GROUP_DB_PASSWORD: ${GROUP_DB_PASSWORD}
+      GROUP_DB_NAME: ${GROUP_DB_NAME}
+      GROUP_DB_SYNC_SCHEMA: ${GROUP_DB_SYNC_SCHEMA}
+      INTERNAL_SERVICE_SECRET: ${INTERNAL_SERVICE_SECRET}
+    ports:
+      - 8002:8002
+    depends_on:
+      - group_pgsql_db
+    restart: on-failure
+
   notification_pgsql_db:
     image: postgres:18.6-alpine
     environment:
@@ -93,6 +124,7 @@ services:
       URLS: >
         [
           { "url": "/applications/user-service/docs/openapi.yaml", "name": "User Service" },
+          { "url": "/applications/group-service/docs/openapi.yaml", "name": "Group Service" },
           { "url": "/applications/assessment-service/docs/openapi.yaml", "name": "Assessment Service" },
           { "url": "/applications/submission-service/docs/openapi.yaml", "name": "Submission Service" },
           { "url": "/applications/notification-service/docs/openapi.yaml", "name": "Notification Service" }
@@ -103,5 +135,6 @@ services:
 
 volumes:
   user_data:
+  group_data:
   assessment_data:
   notification_data:
