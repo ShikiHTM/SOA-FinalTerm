@@ -1,0 +1,16 @@
+{
+    "$schema": "../../node_modules/nx/schemas/project-schema.json",
+    "name": "frontend",
+    "sourceRoot": "applications/frontend/src",
+    "projectType": "application",
+    "targets": {
+        "serve": {
+            "executor": "nx:run-commands",
+            "continuous": true,
+            "options": {
+                "cwd": "applications/frontend",
+                "command": "pnpm dev"
+            }
+        }
+    }
+}

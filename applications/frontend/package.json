@@ -1,0 +1,25 @@
+{
+    "name": "@soa-final-term/frontend",
+    "version": "0.1.0",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "vite --host 0.0.0.0 --port 5173",
+        "build": "tsc --noEmit && vite build",
+        "lint": "eslint src",
+        "test": "node --test tests/*.test.mjs",
+        "typecheck": "tsc --noEmit",
+        "preview": "vite preview --host 0.0.0.0 --port 4173"
+    },
+    "dependencies": {
+        "lucide-react": "^1.77.0",
+        "react": "^19.3.1",
+        "react-dom": "^19.3.1",
+        "react-router-dom": "^7.18.6"
+    },
+    "devDependencies": {
+        "@types/react": "^19.3.0",
+        "@types/react-dom": "^19.3.0",
+        "vite": "^8.3.8"
+    }
+}
