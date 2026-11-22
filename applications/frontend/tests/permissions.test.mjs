@@ -47,6 +47,6 @@ test("only system admin gets the admin interface permission", () => {
     const { hasSystemPermission } = permissions;
     assert.equal(hasSystemPermission("GUEST", "ACCESS_ADMIN"), false);
     assert.equal(hasSystemPermission("USER", "ACCESS_ADMIN"), false);
-    assert.equal(hasSystemPermission("SYSTEM_ADMIN", "ACCESS_ADMIN"), true);
+    assert.equal(hasSystemPermission("ADMIN", "ACCESS_ADMIN"), true);
     assert.equal(hasSystemPermission("UNKNOWN", "ACCESS_ADMIN"), false);
 });

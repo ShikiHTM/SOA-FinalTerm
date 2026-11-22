@@ -1,27 +1,68 @@
-import type { ReactNode } from "react";
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type Dispatch,
+    type ReactNode,
+    type SetStateAction
+} from "react";
 import { Link, useParams } from "react-router-dom";
+import { groupsApi } from "../../../api/client";
+import type { GroupSummary } from "../../../api/types";
 import { hasGroupPermission } from "../../../authorization/permissions";
-import { useApp } from "../../../shared/context";
-import type { Group } from "../../../types";
+import { extractErrorMessage } from "../../../data/http/httpClient";
+import { groupRoleOf } from "../../../shared/context";
 import { GroupManagement } from "../components/GroupManagement";
 
 export function GroupSettingsPage(): ReactNode {
     const { groupId }: { groupId?: string } = useParams();
-    const { data }: ReturnType<typeof useApp> = useApp();
-    const group: Group | undefined = data.groups.find(
-        (item: Group): boolean => item.id === groupId,
-    );
+    const [group, setGroup]: [GroupSummary | null, Dispatch<SetStateAction<GroupSummary | null>>] =
+        useState<GroupSummary | null>(null);
+    const [loading, setLoading]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(true);
+    const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
 
-    if (!group || !hasGroupPermission(group.role, "MANAGE_MEMBERS")) {
-        return <p className="empty">Không tìm thấy nhóm hoặc bạn không có quyền quản lý.</p>;
+    const reloadGroup: () => Promise<void> = useCallback(async (): Promise<void> => {
+        if (!groupId) {
+            return;
+        }
+        setLoading(true);
+        setError("");
+        try {
+            setGroup(await groupsApi.getById(groupId));
+        } catch (reason: unknown) {
+            setError(extractErrorMessage(reason, "Unable to load group settings."));
+        } finally {
+            setLoading(false);
+        }
+    }, [groupId]);
+
+    useEffect((): void => {
+        void reloadGroup();
+    }, [reloadGroup]);
+
+    if (loading && !group) {
+        return <p className="muted">Loading group settings...</p>;
+    }
+    if (!group || !hasGroupPermission(groupRoleOf(group), "MANAGE_MEMBERS")) {
+        return (
+            <div className="page-enter">
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                )}
+                <p className="empty">Group not found or insufficient management permissions.</p>
+            </div>
+        );
     }
 
     return (
-        <div className="group-detail-page">
+        <div className="group-detail-page page-enter">
             <Link className="group-breadcrumb" to={`/groups/${group.id}`}>
-                {group.name} <span>/</span> Cài đặt
+                {group.name} <span>/</span> Settings
             </Link>
-            <GroupManagement group={group} key={group.id} />
+            <GroupManagement group={group} onUpdated={reloadGroup} key={group.id} />
         </div>
     );
 }

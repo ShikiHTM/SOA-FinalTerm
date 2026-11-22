@@ -1,38 +1,55 @@
 import type { ReactNode } from "react";
 import { useOutletContext } from "react-router-dom";
+import type { GroupRole, GroupSummary, OwnUserProfile } from "../api/types";
 import { canViewGroupContent, hasGroupPermission } from "../authorization/permissions";
-import type { DataSource } from "../data/contracts/dataSource";
-import type { Account } from "../data/contracts/services";
-import type { Group, Snapshot } from "../types";
-export type Context = {
-    data: Snapshot;
-    api: DataSource;
-    refresh: () => Promise<void>;
-    accounts: Account[];
-    displayName: string;
-    refreshProfile: () => Promise<void>;
-    email: string;
+
+export type AppContext = {
+    user: OwnUserProfile;
+    unreadCount: number;
+    refreshUser: () => Promise<void>;
+    refreshNotifications: () => Promise<void>;
+    onLogout: () => Promise<void>;
 };
-export function useApp(): Context {
-    return useOutletContext<Context>();
+
+export function useApp(): AppContext {
+    return useOutletContext<AppContext>();
 }
-export function displayNameFor(accounts: Account[], email: string): string {
-    return accounts.find((account: Account): boolean => account.email === email)?.displayName ?? email;
+
+export function groupRoleOf(group: Pick<GroupSummary, "my_role">): GroupRole {
+    return group.my_role ?? "VISITOR";
 }
-export function hasAccess(group: Group): boolean {
-    return canViewGroupContent(group.visibility, group.role);
+
+export function hasAccess(group: Pick<GroupSummary, "visibility" | "my_role">): boolean {
+    return canViewGroupContent(group.visibility, groupRoleOf(group));
 }
-export function canManage(group: Group): boolean {
-    return hasGroupPermission(group.role, "MANAGE_CONTENT");
+
+export function canManage(
+    group: Pick<GroupSummary, "my_role">,
+    systemRole?: OwnUserProfile["system_role"]
+): boolean {
+    return systemRole === "ADMIN" || hasGroupPermission(groupRoleOf(group), "MANAGE_CONTENT");
 }
-export function date(value: string): string {
-    return new Date(value).toLocaleString("vi-VN");
+
+export function formatDate(value: string): string {
+    return new Date(value).toLocaleString("en-US", {
+        dateStyle: "medium",
+        timeStyle: "short"
+    });
 }
+
+export function formatShortDate(value: string): string {
+    return new Date(value).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+    });
+}
+
 export function PageTitle({
     label,
     title,
     description,
-    action,
+    action
 }: {
     label: string;
     title: string;

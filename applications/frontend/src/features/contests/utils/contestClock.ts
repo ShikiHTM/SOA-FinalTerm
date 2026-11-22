@@ -9,12 +9,20 @@ export interface ContestClock {
 
 const MAX_TIMER_DELAY: number = 2_147_483_647;
 
-export type ContestStatus = "Sắp diễn ra" | "Đang diễn ra" | "Đã kết thúc";
+export type ContestClockStatus = "Upcoming" | "Ongoing" | "Ended";
 
-export function getContestStatus(startAt: string, endAt: string, now: number): ContestStatus {
-    if (now < Date.parse(startAt)) return "Sắp diễn ra";
-    if (now >= Date.parse(endAt)) return "Đã kết thúc";
-    return "Đang diễn ra";
+export function getContestStatus(
+    startAt: string,
+    endAt: string,
+    now: number
+): ContestClockStatus {
+    if (now < Date.parse(startAt)) {
+        return "Upcoming";
+    }
+    if (now >= Date.parse(endAt)) {
+        return "Ended";
+    }
+    return "Ongoing";
 }
 
 const browserClock: ContestClock = {
@@ -28,21 +36,24 @@ const browserClock: ContestClock = {
             window.removeEventListener("focus", callback);
             document.removeEventListener("visibilitychange", callback);
         };
-    },
+    }
 };
 
 export function watchContestClock(
     startAt: string | undefined,
     endAt: string | undefined,
     onTick: (now: number) => void,
-    clock: ContestClock = browserClock,
+    clock: ContestClock = browserClock
 ): () => void {
-    const boundaries: number[] = [Date.parse(startAt ?? ""), Date.parse(endAt ?? "")]
-        .filter((value: number): boolean => Number.isFinite(value));
+    const boundaries: number[] = [Date.parse(startAt ?? ""), Date.parse(endAt ?? "")].filter(
+        (value: number): boolean => Number.isFinite(value)
+    );
     let timer: ClockTimer | undefined;
 
     function update(): void {
-        if (timer !== undefined) clock.clearTimer(timer);
+        if (timer !== undefined) {
+            clock.clearTimer(timer);
+        }
         timer = undefined;
 
         const now: number = clock.now();
@@ -59,7 +70,9 @@ export function watchContestClock(
     const unsubscribe: () => void = clock.onResume(update);
     update();
     return (): void => {
-        if (timer !== undefined) clock.clearTimer(timer);
+        if (timer !== undefined) {
+            clock.clearTimer(timer);
+        }
         unsubscribe();
     };
 }

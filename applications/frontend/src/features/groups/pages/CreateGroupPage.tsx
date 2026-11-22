@@ -1,61 +1,69 @@
-import type { Dispatch,SetStateAction } from "react";
-import { useState,type FormEvent,type ReactNode } from "react";
-import { Link,useNavigate } from "react-router-dom";
-import { PageTitle,useApp } from "../../../shared/context";
+import {
+    useState,
+    type Dispatch,
+    type FormEvent,
+    type ReactNode,
+    type SetStateAction
+} from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { groupsApi } from "../../../api/client";
+import type { GroupSummary, GroupVisibility } from "../../../api/types";
+import { extractErrorMessage } from "../../../data/http/httpClient";
+import { PageTitle } from "../../../shared/context";
 
 export function NewGroup(): ReactNode {
-    const { api, refresh }: ReturnType<typeof useApp> = useApp();
     const navigate: ReturnType<typeof useNavigate> = useNavigate();
     const [name, setName]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
     const [description, setDescription]: [string, Dispatch<SetStateAction<string>>] =
         useState<string>("");
-    const [visibility, setVisibility]: [
-        "PUBLIC" | "PRIVATE",
-        Dispatch<SetStateAction<"PUBLIC" | "PRIVATE">>,
-    ] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
+    const [visibility, setVisibility]: [GroupVisibility, Dispatch<SetStateAction<GroupVisibility>>] =
+        useState<GroupVisibility>("PUBLIC");
     const [policy, setPolicy]: [
         "APPROVAL" | "PASSWORD",
-        Dispatch<SetStateAction<"APPROVAL" | "PASSWORD">>,
+        Dispatch<SetStateAction<"APPROVAL" | "PASSWORD">>
     ] = useState<"APPROVAL" | "PASSWORD">("APPROVAL");
     const [password, setPassword]: [string, Dispatch<SetStateAction<string>>] =
         useState<string>("");
+    const [busy, setBusy]: [boolean, Dispatch<SetStateAction<boolean>>] = useState<boolean>(false);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
+
     async function create(event: FormEvent): Promise<void> {
         event.preventDefault();
-        if (
-            !name.trim() ||
-            (visibility === "PRIVATE" && policy === "PASSWORD" && !password.trim())
-        ) {
-            setError("Nhập tên nhóm và mật khẩu nếu nhóm yêu cầu.");
+        if (!name.trim()) {
+            setError("Group name is required.");
             return;
         }
-        const id: string = crypto.randomUUID();
+        if (visibility === "PRIVATE" && policy === "PASSWORD" && password.length < 6) {
+            setError("Group password must be at least 6 characters.");
+            return;
+        }
+        setBusy(true);
+        setError("");
         try {
-            await api.createGroup({
-                id,
+            const created: GroupSummary = await groupsApi.create({
                 name: name.trim(),
                 description: description.trim(),
-                code: id.slice(0, 8).toUpperCase(),
                 visibility,
-                role: "OWNER",
-                joinPolicy: visibility === "PUBLIC" ? "OPEN" : policy,
-                password: visibility === "PRIVATE" && policy === "PASSWORD" ? password : undefined,
+                join_policy: visibility === "PUBLIC" ? "OPEN" : policy,
+                password: visibility === "PRIVATE" && policy === "PASSWORD" ? password : undefined
             });
-            await refresh();
-            navigate(`/groups/${id}`);
+            navigate(`/groups/${created.id}`);
         } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không tạo được nhóm.");
+            setError(extractErrorMessage(reason, "Unable to create group."));
+        } finally {
+            setBusy(false);
         }
     }
+
     return (
-        <>
+        <div className="page-enter">
             <Link className="back" to="/groups">
-                ← Nhóm học tập
+                ← Back to Groups
             </Link>
             <PageTitle
-                label="QUẢN LÝ NHÓM"
-                title="Tạo nhóm"
-                description="Thiết lập không gian học tập của bạn."
+                label="GROUP MANAGEMENT"
+                title="Create learning group"
+                description="Set up a shared space for members, group assessments, and scheduled contests."
             />
             <form
                 className="panel form editor"
@@ -64,52 +72,58 @@ export function NewGroup(): ReactNode {
                 }}
             >
                 <label>
-                    Tên nhóm
+                    Group name
                     <input
                         required
+                        minLength={2}
+                        maxLength={150}
                         value={name}
                         onChange={(event): void => setName(event.target.value)}
                     />
                 </label>
                 <label>
-                    Mô tả
+                    Description
                     <textarea
                         rows={3}
+                        maxLength={2000}
                         value={description}
                         onChange={(event): void => setDescription(event.target.value)}
                     />
                 </label>
                 <label>
-                    Phạm vi
+                    Visibility
                     <select
                         value={visibility}
                         onChange={(event): void =>
-                            setVisibility(event.target.value as "PUBLIC" | "PRIVATE")
+                            setVisibility(event.target.value as GroupVisibility)
                         }
                     >
-                        <option value="PUBLIC">Công khai</option>
-                        <option value="PRIVATE">Riêng tư</option>
+                        <option value="PUBLIC">Public (open join)</option>
+                        <option value="PRIVATE">Private</option>
                     </select>
                 </label>
                 {visibility === "PRIVATE" && (
                     <>
                         <label>
-                            Cách tham gia
+                            Join policy
                             <select
                                 value={policy}
                                 onChange={(event): void =>
                                     setPolicy(event.target.value as "APPROVAL" | "PASSWORD")
                                 }
                             >
-                                <option value="APPROVAL">Yêu cầu phê duyệt</option>
-                                <option value="PASSWORD">Mật khẩu nhóm</option>
+                                <option value="APPROVAL">Moderator approval</option>
+                                <option value="PASSWORD">Shared group password</option>
                             </select>
                         </label>
                         {policy === "PASSWORD" && (
                             <label>
-                                Mật khẩu thử nghiệm
+                                Group password
                                 <input
                                     type="password"
+                                    required
+                                    minLength={6}
+                                    maxLength={128}
                                     value={password}
                                     onChange={(event): void => setPassword(event.target.value)}
                                 />
@@ -117,10 +131,15 @@ export function NewGroup(): ReactNode {
                         )}
                     </>
                 )}
-                <p className="hint">Nhóm chỉ lưu trên trình duyệt; không dùng mật khẩu thật.</p>
-                {error && <p className="error">{error}</p>}
-                <button className="button primary">Tạo nhóm thử nghiệm</button>
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                )}
+                <button className="button primary" disabled={busy}>
+                    {busy ? "Creating..." : "Create group"}
+                </button>
             </form>
-        </>
+        </div>
     );
 }

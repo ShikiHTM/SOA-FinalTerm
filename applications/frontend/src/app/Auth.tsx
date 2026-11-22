@@ -1,133 +1,230 @@
 import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from "react";
 import { Link } from "react-router-dom";
-import { getServices } from "../data/services";
+import { authApi, setAccessToken } from "../api/client";
+import { createOAuthAuthorizationUrl } from "../api/oauth";
+import type { AuthResponse, OAuthProvider } from "../api/types";
+import { extractErrorMessage } from "../data/http/httpClient";
 import { ThemeToggle } from "./ThemeToggle";
 import type { Theme } from "./theme";
 
+function GoogleIcon(): ReactNode {
+    return (
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+                fill="currentColor"
+                d="M21.35 11.1H12v3.2h5.35c-.45 2.4-2.55 4-5.35 4a6 6 0 1 1 3.95-10.5l2.45-2.45A9.4 9.4 0 0 0 12 2.6a9.4 9.4 0 1 0 0 18.8c5.4 0 9-3.8 9-9.15 0-.4-.05-.8-.15-1.15Z"
+            />
+        </svg>
+    );
+}
+
+function GitHubIcon(): ReactNode {
+    return (
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path
+                fill="currentColor"
+                d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.89 1.52 2.34 1.08 2.91.83.09-.65.35-1.09.63-1.34-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.99 1.03-2.69-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.56 9.56 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.6 1.03 2.69 0 3.85-2.34 4.7-4.57 4.95.36.31.68.92.68 1.85v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"
+            />
+        </svg>
+    );
+}
+
 export function Auth({
-    onLogin,
+    onAuthenticated,
     theme,
     onToggleTheme,
-    register = false,
+    register = false
 }: {
-    onLogin: (email: string) => void;
+    onAuthenticated: () => Promise<void>;
     theme: Theme;
     onToggleTheme: () => void;
     register?: boolean;
 }): ReactNode {
-    const demo: ReturnType<typeof getServices>["demo"] = getServices().demo;
+    const [identifier, setIdentifier]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
     const [email, setEmail]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
+    const [username, setUsername]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
+    const [displayName, setDisplayName]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
     const [password, setPassword]: [string, Dispatch<SetStateAction<string>>] =
         useState<string>("");
+    const [busy, setBusy]: [boolean, Dispatch<SetStateAction<boolean>>] = useState<boolean>(false);
+    const [oauthBusy, setOauthBusy]: [OAuthProvider | null, Dispatch<SetStateAction<OAuthProvider | null>>] =
+        useState<OAuthProvider | null>(null);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
-    async function login(event: FormEvent): Promise<void> {
+
+    async function submit(event: FormEvent): Promise<void> {
         event.preventDefault();
+        setError("");
+        setBusy(true);
         try {
-            // TODO: Kết nối đăng nhập, đăng ký và phiên thật theo contract xác thực của Gateway.
-            if (register) await getServices().accounts.register(email, password);
-            onLogin(await getServices().accounts.authenticate(email, password));
+            const response: AuthResponse = register
+                ? await authApi.register({
+                      email: email.trim(),
+                      username: username.trim(),
+                      password,
+                      display_name: displayName.trim()
+                  })
+                : await authApi.login(identifier.trim(), password);
+            setAccessToken(response.token);
+            await onAuthenticated();
         } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không thể xác thực tài khoản.");
+            setError(extractErrorMessage(reason, "Unable to authenticate account."));
+        } finally {
+            setBusy(false);
         }
     }
+
+    function launchOAuth(provider: OAuthProvider): void {
+        setError("");
+        try {
+            setOauthBusy(provider);
+            const authUrl: string = createOAuthAuthorizationUrl(provider);
+            window.location.assign(authUrl);
+        } catch (reason: unknown) {
+            setOauthBusy(null);
+            setError(extractErrorMessage(reason, "Unable to start OAuth sign-in."));
+        }
+    }
+
     return (
-        <main className="login">
+        <main className="login page-enter">
             <div className="login-header">
-                <div className="brand">
+                <Link className="brand" to="/discover">
                     <span className="brand-icon">L</span> LMS
-                </div>
+                </Link>
                 <ThemeToggle theme={theme} onToggle={onToggleTheme} />
             </div>
             <div className="login-grid">
                 <section>
-                    <p className="eyebrow">KHÔNG GIAN HỌC TẬP</p>
+                    <p className="eyebrow">LEARNING WORKSPACE</p>
                     <h1>
-                        Học cùng nhau.
+                        Learn together.
                         <br />
-                        Tiến bộ mỗi ngày.
+                        Grow every day.
                     </h1>
-                    <p className="muted">Một nơi để khám phá nhóm, luyện tập và tham gia kỳ thi.</p>
+                    <p className="muted">
+                        Join learning groups, compete in scheduled contests, and track your
+                        progress over time.
+                    </p>
                 </section>
                 <section className="panel login-panel">
-                    <p className="eyebrow">CHÀO MỪNG TRỞ LẠI</p>
-                    <h2>
-                        {register ? "Đăng ký" : "Đăng nhập"}
-                        {demo ? " trải nghiệm" : ""}
-                    </h2>
-                    {demo && <p className="notice">{demo.authNotice}</p>}
-                    {demo && <p className="hint auth-preview-hint">{demo.roleHint}</p>}
+                    <p className="eyebrow">{register ? "CREATE ACCOUNT" : "WELCOME BACK"}</p>
+                    <h2>{register ? "Sign up" : "Sign in"}</h2>
                     <form
                         className="form"
                         onSubmit={(event): void => {
-                            void login(event);
+                            void submit(event);
                         }}
                     >
+                        {register ? (
+                            <>
+                                <label>
+                                    Display name
+                                    <input
+                                        type="text"
+                                        required
+                                        maxLength={120}
+                                        value={displayName}
+                                        onChange={(event): void => setDisplayName(event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    Username
+                                    <input
+                                        type="text"
+                                        required
+                                        minLength={3}
+                                        maxLength={64}
+                                        pattern="[a-zA-Z0-9_.-]+"
+                                        title="Letters, numbers, dots, underscores, and hyphens only"
+                                        value={username}
+                                        onChange={(event): void => setUsername(event.target.value)}
+                                    />
+                                </label>
+                                <label>
+                                    Email
+                                    <input
+                                        type="email"
+                                        required
+                                        maxLength={255}
+                                        value={email}
+                                        onChange={(event): void => setEmail(event.target.value)}
+                                    />
+                                </label>
+                            </>
+                        ) : (
+                            <label>
+                                Email or username
+                                <input
+                                    type="text"
+                                    required
+                                    maxLength={255}
+                                    value={identifier}
+                                    onChange={(event): void => setIdentifier(event.target.value)}
+                                />
+                            </label>
+                        )}
                         <label>
-                            Email
-                            <input
-                                type="email"
-                                required
-                                value={email}
-                                onChange={(event): void => setEmail(event.target.value)}
-                            />
-                        </label>
-                        <label>
-                            {demo ? "Mật khẩu thử nghiệm" : "Mật khẩu"}
+                            Password
                             <input
                                 type="password"
-                                minLength={6}
+                                minLength={register ? 8 : 1}
+                                maxLength={128}
                                 required
                                 value={password}
                                 onChange={(event): void => setPassword(event.target.value)}
                             />
                         </label>
+                        {register && (
+                            <p className="hint">
+                                Minimum 8 characters including uppercase, lowercase, and a digit.
+                            </p>
+                        )}
                         {error && (
                             <p className="error" role="alert">
                                 {error}
                             </p>
                         )}
-                        <button className="button primary">Tiếp tục</button>
+                        <button className="button primary" disabled={busy || oauthBusy !== null}>
+                            {busy ? "Please wait..." : register ? "Create account" : "Continue"}
+                        </button>
                     </form>
-                    {/* TODO: Tích hợp chuyển hướng và callback OAuth sau khi có contract Google/GitHub. */}
-                    <div className="auth-providers" aria-label="Phương thức đăng nhập khác">
+                    <div className="auth-providers" aria-label="Alternative sign-in methods">
                         <div className="auth-providers-divider">
-                            <span>hoặc tiếp tục với</span>
+                            <span>or continue with</span>
                         </div>
                         <div className="auth-providers-buttons">
                             <button
                                 className="button auth-provider"
                                 type="button"
-                                disabled
-                                aria-describedby="auth-providers-status"
+                                disabled={busy || oauthBusy !== null}
+                                onClick={(): void => launchOAuth("GOOGLE")}
                             >
-                                <span className="auth-provider-icon" aria-hidden="true">G</span>
-                                Google
+                                <GoogleIcon />
+                                <span>{oauthBusy === "GOOGLE" ? "Redirecting..." : "Google"}</span>
                             </button>
                             <button
                                 className="button auth-provider"
                                 type="button"
-                                disabled
-                                aria-describedby="auth-providers-status"
+                                disabled={busy || oauthBusy !== null}
+                                onClick={(): void => launchOAuth("GITHUB")}
                             >
-                                <span className="auth-provider-icon" aria-hidden="true">GH</span>
-                                GitHub
+                                <GitHubIcon />
+                                <span>{oauthBusy === "GITHUB" ? "Redirecting..." : "GitHub"}</span>
                             </button>
                         </div>
-                        <p id="auth-providers-status" className="auth-providers-status">
-                            Đăng nhập Google và GitHub chưa được kết nối.
-                        </p>
                     </div>
                     <p className="auth-switch">
                         {register ? (
-                            <Link to="/login">Đã có tài khoản? Đăng nhập</Link>
+                            <Link to="/login">Already have an account? Sign in</Link>
                         ) : (
-                            <Link to="/register">
-                                Chưa có tài khoản? {demo ? "Đăng ký thử nghiệm" : "Đăng ký"}
-                            </Link>
+                            <Link to="/register">Need an account? Sign up</Link>
                         )}
                     </p>
                     <Link className="auth-guest-link" to="/discover">
-                        Khám phá với tư cách khách
+                        Browse as guest
                     </Link>
                 </section>
             </div>

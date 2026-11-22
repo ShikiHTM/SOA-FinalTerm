@@ -1,60 +1,74 @@
 # LMS Frontend
 
-Ứng dụng giao diện LMS sử dụng React, TypeScript và Vite.
+Web client for the Learning Management System Assessment and Grading Platform.
 
-## Trạng thái
+## Prerequisites
 
-- Chạy với dữ liệu mock; chưa tích hợp API Gateway hoặc xác thực thật.
-- Mock chỉ sử dụng tạm thời; sau khi các service và Gateway giao tiếp đầy đủ, được kiểm thử tích hợp thành công thì loại bỏ toàn bộ mock và chế độ thử vai trò.
+- Node.js 22+
+- pnpm 10+
+- Running API Gateway (default `http://localhost:3000`, or run the full stack via Docker Compose)
 
-## Khởi chạy
+## Environment Variables
 
-Tại thư mục gốc repository:
+Configure optional overrides in `applications/frontend/.env.local` (based on [applications/frontend/.env.example](.env.example)):
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `VITE_API_BASE_URL` | `/api/v1` | API base path used by browser requests |
+| `VITE_API_PROXY_TARGET` | `http://localhost:3000` | Upstream API Gateway target for Vite dev/preview `/api` proxy |
+| `VITE_GOOGLE_CLIENT_ID` | _(empty)_ | Google OAuth2 Web Client ID (optional) |
+| `VITE_GITHUB_CLIENT_ID` | _(empty)_ | GitHub OAuth App Client ID (optional) |
+
+> Never place OAuth client secrets or server credentials in frontend environment variables. All `VITE_*` values are embedded into client assets.
+
+### OAuth2 Redirect URIs
+
+If enabling social sign-in, register these callback URLs with your OAuth providers:
+
+- **Google**: `http://localhost:5173/auth/callback/google`
+- **GitHub**: `http://localhost:5173/auth/callback/github`
+
+## Run Locally
+
+1. Install workspace dependencies from the repository root:
 
 ```powershell
 pnpm install --frozen-lockfile
+```
+
+2. (Optional) Create `applications/frontend/.env.local` if overriding defaults:
+
+```powershell
+Copy-Item applications/frontend/.env.example applications/frontend/.env.local
+```
+
+3. Start the frontend development server:
+
+```powershell
 pnpm --filter @soa-final-term/frontend dev
 ```
 
-Truy cập `http://localhost:5173`. Nguồn dữ liệu mặc định là `mock`; cấu hình mẫu nằm tại `.env.example`.
+Open `http://localhost:5173`. Requests to `/api/*` are proxied automatically to `VITE_API_PROXY_TARGET` (`http://localhost:3000` by default).
 
-### Nguồn dữ liệu
+## Run with Docker Compose
 
-Tạo `applications/frontend/.env.local` từ `.env.example` và chọn `VITE_DATA_SOURCE=mock` để dùng adapter mock. Sau khi adapter Gateway hoàn chỉnh, đặt `VITE_DATA_SOURCE=api` và `VITE_API_BASE_URL` theo địa chỉ Gateway của nhóm; khởi động lại Vite sau khi thay đổi. Các biến `VITE_` được đưa vào frontend, không chứa secret.
-
-Hiện chế độ `api` chỉ kiểm tra cấu hình và báo chưa hoàn thiện; không tự chuyển sang mock. Cần tích hợp adapter, xác thực, phiên và dữ liệu theo contract trước khi bật API. Các interface và `read()` tổng hợp hiện tại có thể cần điều chỉnh nếu contract thực tế khác.
-
-| Tài khoản mock | Vai trò |
-| --- | --- |
-| `user@lms.local` | User / Member |
-| `owner@lms.local` | Group Owner |
-| `moderator@lms.local` | Group Moderator |
-| `admin@lms.local` | System Admin |
-| `rbac@lms.local` | Thử chuyển đổi vai trò |
-
-Mật khẩu mock: `demo123`. Với tài khoản `rbac`, vai trò nhóm áp dụng cho nhóm **Cơ sở dữ liệu** và dữ liệu thử được tách theo tab. Không nhập mật khẩu thật.
-
-## Kiểm tra
+Start the API Gateway, backend services, and frontend together from the repository root:
 
 ```powershell
+docker compose up -d --build frontend
+```
+
+Open `http://localhost:5173` (or override the host port with `FRONTEND_PORT`).
+
+## Available Commands
+
+Run from the repository root:
+
+```powershell
+pnpm --filter @soa-final-term/frontend dev
+pnpm --filter @soa-final-term/frontend build
+pnpm --filter @soa-final-term/frontend preview
 pnpm --filter @soa-final-term/frontend lint
 pnpm --filter @soa-final-term/frontend typecheck
 pnpm --filter @soa-final-term/frontend test
-pnpm --filter @soa-final-term/frontend build
 ```
-
-## Cấu trúc
-
-| Đường dẫn | Trách nhiệm |
-| --- | --- |
-| `src/app/`, `src/App.tsx` | Giao diện chung, phiên và định tuyến |
-| `src/features/` | Các màn hình theo nghiệp vụ |
-| `src/authorization/` | Quy tắc phân quyền frontend |
-| `src/data/contracts/` | Hợp đồng dữ liệu nội bộ frontend |
-| `src/data/mock/` | Dữ liệu và thao tác mô phỏng |
-| `src/data/selectServices.ts` | Chọn adapter theo cấu hình môi trường |
-| `src/data/http/` | HTTP client cơ bản cho adapter API tương lai |
-| `src/data/gateway/` | Khung ghép adapter và mẫu Notification; chưa kết nối Gateway |
-
-Các interface trong `data/contracts/` phản ánh nhu cầu frontend. Khi tích hợp, triển khai adapter cho từng nghiệp vụ theo OpenAPI đã xác nhận, cung cấp xác thực và session, rồi ghép qua `createGatewayServices`. `createNotificationAdapter` nhận cấu hình request từ bên ngoài; chưa quy định route Gateway. Chế độ `api` hiện vẫn bị chặn cho đến khi tích hợp hoàn chỉnh.
-

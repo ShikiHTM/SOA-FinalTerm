@@ -1,46 +1,62 @@
 import { useCallback, useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
-import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
-import { dataSourceError, getServices } from "./data/services";
-import type { Account } from "./data/contracts/services";
-import { Dashboard } from "./features/dashboard/pages/DashboardPage";
-import { Groups } from "./features/groups/pages/GroupsPage";
-import { GroupDetail } from "./features/groups/pages/GroupDetailPage";
-import { GroupSettingsPage } from "./features/groups/pages/GroupSettingsPage";
-import { AssessmentEditor } from "./features/assessments/pages/AssessmentEditorPage";
-import { AssessmentDetail } from "./features/assessments/pages/AssessmentDetailPage";
-import { ContestDetail } from "./features/contests/pages/ContestDetailPage";
-import { Attempt } from "./features/contests/pages/AttemptPage";
-import { NewGroup } from "./features/groups/pages/CreateGroupPage";
-import { NewContest } from "./features/contests/pages/CreateContestPage";
-import { Practice } from "./features/assessments/pages/PracticePage";
-import { Grading } from "./features/submissions/pages/GradingPage";
-import { Notifications } from "./features/notifications/pages/NotificationsPage";
-import { SubmissionHistory } from "./features/submissions/pages/SubmissionHistoryPage";
-import { SubmissionDetail } from "./features/submissions/pages/SubmissionDetailPage";
-import { GuestPage } from "./features/guest/pages/GuestPage";
-import { AdminPage } from "./features/admin/pages/AdminPage";
-import { FavoritesPage } from "./features/assessments/pages/FavoritesPage";
-import { ProfilesPage } from "./features/profiles/pages/ProfilesPage";
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { authApi, clearAccessToken, getAccessToken, usersApi } from "./api/client";
+import type { OwnUserProfile } from "./api/types";
 import { Auth } from "./app/Auth";
+import { OAuthCallback } from "./app/OAuthCallback";
 import { Shell } from "./app/Shell";
 import { ThemeToggle } from "./app/ThemeToggle";
 import type { Theme } from "./app/theme";
+import { HTTPError } from "./data/http/httpClient";
+import { AdminPage } from "./features/admin/pages/AdminPage";
+import { AssessmentDetail } from "./features/assessments/pages/AssessmentDetailPage";
+import { AssessmentEditor } from "./features/assessments/pages/AssessmentEditorPage";
+import { FavoritesPage } from "./features/assessments/pages/FavoritesPage";
+import { Practice } from "./features/assessments/pages/PracticePage";
+import { Attempt } from "./features/contests/pages/AttemptPage";
+import { ContestDetail } from "./features/contests/pages/ContestDetailPage";
+import { Contests } from "./features/contests/pages/ContestsPage";
+import { NewContest } from "./features/contests/pages/CreateContestPage";
+import { Dashboard } from "./features/dashboard/pages/DashboardPage";
+import { NewGroup } from "./features/groups/pages/CreateGroupPage";
+import { GroupDetail } from "./features/groups/pages/GroupDetailPage";
+import { GroupSettingsPage } from "./features/groups/pages/GroupSettingsPage";
+import { Groups } from "./features/groups/pages/GroupsPage";
+import { GuestPage } from "./features/guest/pages/GuestPage";
+import { Notifications } from "./features/notifications/pages/NotificationsPage";
+import { ProfilesPage } from "./features/profiles/pages/ProfilesPage";
+import { Grading } from "./features/submissions/pages/GradingPage";
+import { SubmissionDetail } from "./features/submissions/pages/SubmissionDetailPage";
+import { SubmissionHistory } from "./features/submissions/pages/SubmissionHistoryPage";
 import "./styles.css";
 
 const THEME_KEY: string = "lms-theme";
 
 function RequireSession({
-    email,
+    user,
+    booting,
     logoutRequested,
-    children,
+    children
 }: {
-    email: string;
+    user: OwnUserProfile | null;
+    booting: boolean;
     logoutRequested: boolean;
     children: ReactNode;
 }): ReactNode {
     const { pathname }: ReturnType<typeof useLocation> = useLocation();
 
-    if (!email) {
+    if (booting) {
+        return (
+            <main className="main">
+                <section className="panel" aria-busy="true">
+                    <div className="skeleton-block" />
+                    <div className="skeleton-block" />
+                </section>
+            </main>
+        );
+    }
+
+    if (!user) {
         const destination: string = logoutRequested
             ? "/login"
             : pathname === "/"
@@ -52,121 +68,205 @@ function RequireSession({
     return children;
 }
 
+function GuestProfileWrapper(): ReactNode {
+    return <Outlet />;
+}
 
-function Application(): ReactNode {
-    const [previewRevision, setPreviewRevision]: [number, Dispatch<SetStateAction<number>>] = useState<number>(0);
+export function Application(): ReactNode {
+    const [user, setUser]: [OwnUserProfile | null, Dispatch<SetStateAction<OwnUserProfile | null>>] =
+        useState<OwnUserProfile | null>(null);
+    const [booting, setBooting]: [boolean, Dispatch<SetStateAction<boolean>>] = useState<boolean>(
+        (): boolean => Boolean(getAccessToken())
+    );
     const [logoutRequested, setLogoutRequested]: [boolean, Dispatch<SetStateAction<boolean>>] =
         useState<boolean>(false);
-    const [theme, setTheme]: [Theme, Dispatch<SetStateAction<Theme>>] = useState<Theme>(() => {
-        try {
-            return localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
-        } catch {
+    const [theme, setTheme]: [Theme, Dispatch<SetStateAction<Theme>>] = useState<Theme>((): Theme => {
+        if (typeof window === "undefined") {
             return "light";
         }
+        return window.localStorage.getItem(THEME_KEY) === "dark" ? "dark" : "light";
     });
+
     useEffect((): void => {
-        document.documentElement.dataset.theme = theme;
-        try {
-            localStorage.setItem(THEME_KEY, theme);
-        } catch {
-            // Theme vẫn áp dụng trong phiên hiện tại khi không lưu được.
-        }
+        document.documentElement.setAttribute("data-theme", theme);
+        window.localStorage.setItem(THEME_KEY, theme);
     }, [theme]);
-    function toggleTheme(): void {
+
+    const toggleTheme: () => void = useCallback((): void => {
         setTheme((current: Theme): Theme => (current === "light" ? "dark" : "light"));
-    }
-    const [email, setEmail]: [string, Dispatch<SetStateAction<string>>] = useState<string>(() => {
-        return getServices().session.read();
-    });
-    const [displayName, setDisplayName]: [string, Dispatch<SetStateAction<string>>] =
-        useState<string>("");
-    const [accounts, setAccounts]: [Account[], Dispatch<SetStateAction<Account[]>>] =
-        useState<Account[]>([]);
-    const refreshProfile: () => Promise<void> = useCallback(async (): Promise<void> => {
-        if (!email) {
-            setAccounts([]);
-            setDisplayName("");
+    }, []);
+
+    const refreshUser: () => Promise<void> = useCallback(async (): Promise<void> => {
+        const token: string = getAccessToken();
+        if (!token) {
+            setUser(null);
             return;
         }
-
         try {
-            const accounts: Account[] = await getServices().accounts.list();
-            setAccounts(accounts);
-            const account: Account | undefined = accounts.find(
-                (item: Account): boolean => item.email === email,
-            );
-            setDisplayName(account?.displayName || email.split("@")[0]);
-        } catch {
-            setAccounts([]);
-            setDisplayName(email.split("@")[0]);
+            const me: OwnUserProfile = await usersApi.getMe();
+            setLogoutRequested(false);
+            setUser(me);
+        } catch (err: unknown) {
+            if (err instanceof HTTPError && (err.response.status === 401 || err.response.status === 403)) {
+                clearAccessToken();
+            }
+            setUser(null);
+            throw err;
         }
-    }, [email]);
-    useEffect((): void => {
-        void refreshProfile();
-    }, [refreshProfile]);
-    useEffect((): (() => void) => {
-        const validate: () => void = (): void => {
-            if (email) void getServices().accounts.isActive(email).then((active: boolean): void => {
-                if (!active) {
-                    getServices().session.clear();
-                    setEmail("");
+    }, []);
+
+    useEffect((): (() => void) | undefined => {
+        let cancelled: boolean = false;
+        const token: string = getAccessToken();
+        if (!token) {
+            setBooting(false);
+            return undefined;
+        }
+
+        usersApi
+            .getMe()
+            .then((me: OwnUserProfile): void => {
+                if (!cancelled) {
+                    setUser(me);
+                }
+            })
+            .catch((err: unknown): void => {
+                if (err instanceof HTTPError && (err.response.status === 401 || err.response.status === 403)) {
+                    clearAccessToken();
+                }
+                if (!cancelled) {
+                    setUser(null);
+                }
+            })
+            .finally((): void => {
+                if (!cancelled) {
+                    setBooting(false);
                 }
             });
-        };
-        validate();
-        window.addEventListener("focus", validate);
-        window.addEventListener("storage", validate);
+
         return (): void => {
-            window.removeEventListener("focus", validate);
-            window.removeEventListener("storage", validate);
+            cancelled = true;
         };
-    }, [email]);
-    function login(value: string): void {
-        getServices().session.save(value);
-        setLogoutRequested(false);
-        setEmail(value);
-    }
-    function logout(): void {
+    }, []);
+
+    const handleAuthenticated: () => Promise<void> = useCallback(async (): Promise<void> => {
+        await refreshUser();
+    }, [refreshUser]);
+
+    const handleLogout: () => Promise<void> = useCallback(async (): Promise<void> => {
         setLogoutRequested(true);
-        getServices().session.clear();
-        setEmail("");
-    }
-    const guestPage: ReactNode = (
-        <GuestPage themeControl={<ThemeToggle theme={theme} onToggle={toggleTheme} />} />
-    );
+        try {
+            await authApi.logout();
+        } catch {
+            clearAccessToken();
+        } finally {
+            clearAccessToken();
+            setUser(null);
+        }
+    }, []);
+
+    const themeControl: ReactNode = <ThemeToggle theme={theme} onToggle={toggleTheme} />;
+
     return (
         <BrowserRouter>
             <Routes>
-                <Route path="/discover" element={guestPage} />
-                <Route path="/discover/groups/:groupId" element={guestPage} />
-                <Route path="/discover/contests/:contestId" element={guestPage} />
-                <Route path="/users" element={<ProfilesPage email={email} onProfileUpdated={refreshProfile} />} />
-                <Route path="/users/:userEmail" element={<ProfilesPage email={email} onProfileUpdated={refreshProfile} />} />
+                <Route path="/discover" element={<GuestPage themeControl={themeControl} />} />
+                <Route
+                    path="/discover/groups/:groupId"
+                    element={<GuestPage themeControl={themeControl} />}
+                />
+                <Route
+                    path="/discover/contests/:contestId"
+                    element={<GuestPage themeControl={themeControl} />}
+                />
                 <Route
                     path="/login"
                     element={
-                        email ? (
+                        user ? (
                             <Navigate to="/" replace />
                         ) : (
-                            <Auth onLogin={login} theme={theme} onToggleTheme={toggleTheme} />
+                            <Auth
+                                onAuthenticated={handleAuthenticated}
+                                theme={theme}
+                                onToggleTheme={toggleTheme}
+                            />
                         )
                     }
                 />
-                <Route path="/register" element={email ? <Navigate to="/" replace /> : <Auth key="register" register onLogin={login} theme={theme} onToggleTheme={toggleTheme} />} />
                 <Route
+                    path="/register"
                     element={
-                        <RequireSession email={email} logoutRequested={logoutRequested}>
-                            <Shell
-                                key={`${email}:${previewRevision}`}
-                                email={email}
-                                displayName={displayName || email.split("@")[0]}
-                                accounts={accounts}
-                                refreshProfile={refreshProfile}
-                                onLogout={logout}
+                        user ? (
+                            <Navigate to="/" replace />
+                        ) : (
+                            <Auth
+                                key="register"
+                                register
+                                onAuthenticated={handleAuthenticated}
                                 theme={theme}
                                 onToggleTheme={toggleTheme}
-                                onPreviewChange={(): void => setPreviewRevision((value: number): number => value + 1)}
                             />
+                        )
+                    }
+                />
+                <Route
+                    path="/auth/callback/:provider"
+                    element={<OAuthCallback onAuthenticated={handleAuthenticated} />}
+                />
+
+                <Route
+                    element={
+                        user ? (
+                            <Shell
+                                user={user}
+                                refreshUser={refreshUser}
+                                onLogout={handleLogout}
+                                theme={theme}
+                                onToggleTheme={toggleTheme}
+                            />
+                        ) : (
+                            <GuestProfileWrapper />
+                        )
+                    }
+                >
+                    <Route
+                        path="/users/:username"
+                        element={
+                            <ProfilesPage
+                                currentUser={user}
+                                onProfileUpdated={refreshUser}
+                                themeControl={user ? undefined : themeControl}
+                            />
+                        }
+                    />
+                    <Route
+                        path="/users/id/:userId"
+                        element={
+                            <ProfilesPage
+                                currentUser={user}
+                                onProfileUpdated={refreshUser}
+                                themeControl={user ? undefined : themeControl}
+                            />
+                        }
+                    />
+                </Route>
+
+                <Route
+                    element={
+                        <RequireSession
+                            user={user}
+                            booting={booting}
+                            logoutRequested={logoutRequested}
+                        >
+                            {user ? (
+                                <Shell
+                                    user={user}
+                                    refreshUser={refreshUser}
+                                    onLogout={handleLogout}
+                                    theme={theme}
+                                    onToggleTheme={toggleTheme}
+                                />
+                            ) : null}
                         </RequireSession>
                     }
                 >
@@ -175,40 +275,42 @@ function Application(): ReactNode {
                     <Route path="groups/new" element={<NewGroup />} />
                     <Route path="groups/:groupId" element={<GroupDetail />} />
                     <Route path="groups/:groupId/settings" element={<GroupSettingsPage />} />
+                    <Route path="groups/:groupId/grading" element={<Grading />} />
                     <Route path="assessments" element={<Navigate to="/groups" replace />} />
                     <Route path="assessments/new" element={<AssessmentEditor />} />
                     <Route path="assessments/:assessmentId/edit" element={<AssessmentEditor />} />
                     <Route path="assessments/:assessmentId" element={<AssessmentDetail />} />
                     <Route path="assessments/:assessmentId/practice" element={<Practice />} />
-                    <Route path="contests" element={<Navigate to="/groups" replace />} />
+                    <Route path="contests" element={<Contests />} />
                     <Route path="contests/new" element={<NewContest />} />
                     <Route path="contests/:contestId" element={<ContestDetail />} />
                     <Route path="contests/:contestId/attempt" element={<Attempt />} />
                     <Route path="grading" element={<Navigate to="/groups" replace />} />
-                    <Route path="groups/:groupId/grading" element={<Grading />} />
                     <Route path="submissions" element={<SubmissionHistory />} />
                     <Route path="submissions/:submissionId" element={<SubmissionDetail />} />
                     <Route path="notifications" element={<Notifications />} />
                     <Route path="favorites" element={<FavoritesPage />} />
-                    <Route path="profile" element={<ProfilesPage email={email} onProfileUpdated={refreshProfile} />} />
-                    <Route path="admin" element={getServices().accounts.isSystemAdmin(email) ? <AdminPage /> : <Navigate to="/" replace />} />
-                    <Route path="*" element={<p className="empty">Không tìm thấy trang.</p>} />
+                    <Route
+                        path="profile"
+                        element={
+                            <ProfilesPage currentUser={user} onProfileUpdated={refreshUser} />
+                        }
+                    />
+                    <Route
+                        path="admin"
+                        element={
+                            user?.system_role === "ADMIN" ? (
+                                <AdminPage />
+                            ) : (
+                                <Navigate to="/" replace />
+                            )
+                        }
+                    />
+                    <Route path="*" element={<p className="empty">Page not found.</p>} />
                 </Route>
             </Routes>
         </BrowserRouter>
     );
 }
-function App(): ReactNode {
-    if (dataSourceError) {
-        return (
-            <main className="main">
-                <section className="panel" role="alert">
-                    <h1>Không thể khởi động nguồn dữ liệu</h1>
-                    <p>{dataSourceError}</p>
-                </section>
-            </main>
-        );
-    }
-    return <Application />;
-}
-export default App;
+
+export default Application;

@@ -14,7 +14,7 @@ export function ExpiredAttempt({
     status,
     error,
     submissionId,
-    onRetry,
+    onRetry
 }: {
     contestId: string;
     status: AutoSubmitStatus;
@@ -23,40 +23,43 @@ export function ExpiredAttempt({
     onRetry: () => void;
 }): ReactNode {
     return (
-        <section className="panel form">
-            <h1>Kỳ thi đã hết giờ</h1>
+        <section className="panel form page-enter">
+            <h1>Contest has ended</h1>
             {status === "failed" ? (
                 <>
                     <p className="error" role="alert">
-                        Không thể tự động nộp bài: {error}
+                        Unable to auto-submit: {error}
                     </p>
-                    <p>Bản nháp vẫn được giữ nếu trình duyệt đã lưu thành công.</p>
+                    <p>Your local browser draft is preserved if saved before the deadline.</p>
                     <button className="button primary" type="button" onClick={onRetry}>
-                        Thử nộp lại
+                        Retry submission
                     </button>
                 </>
             ) : status === "submitted" ? (
                 <>
-                    <p role="status">Bạn đã nộp bài cho kỳ thi này.</p>
+                    <p role="status">Your attempt has already been submitted for this contest.</p>
                     {submissionId && (
                         <Link className="button primary" to={`/submissions/${submissionId}`}>
-                            Xem bài đã nộp
+                            View submission
                         </Link>
                     )}
                 </>
             ) : status === "not_started" ? (
-                <p role="status">Kỳ thi đã kết thúc và bạn chưa bắt đầu làm bài.</p>
+                <p role="status">The contest ended before you started an attempt.</p>
             ) : status === "draft_missing" ? (
                 <p role="alert">
-                    Có lượt làm bài chưa nộp, nhưng không tìm thấy bản nháp trên trình duyệt này.
+                    An unsubmitted attempt was detected, but no saved draft was found in this
+                    browser.
                 </p>
             ) : (
                 <p role="status" aria-live="polite">
-                    {status === "submitting" ? "Đang tự động nộp bài…" : "Đang kiểm tra lượt làm bài…"}
+                    {status === "submitting"
+                        ? "Auto-submitting your answers..."
+                        : "Checking your attempt status..."}
                 </p>
             )}
             <Link className="button" to={`/contests/${contestId}`}>
-                Về chi tiết kỳ thi
+                Back to contest details
             </Link>
         </section>
     );

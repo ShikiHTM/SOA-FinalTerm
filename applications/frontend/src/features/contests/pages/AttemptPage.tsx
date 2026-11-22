@@ -1,220 +1,286 @@
+import { FileText } from "lucide-react";
 import {
-    FileText
-} from "lucide-react";
-import type { Dispatch,SetStateAction } from "react";
-import { useEffect,useLayoutEffect,useRef,useState,type ReactNode } from "react";
-import { Link,useNavigate,useParams } from "react-router-dom";
-import { date,hasAccess,useApp } from "../../../shared/context";
-import type { Assessment,Contest,Group,Question } from "../../../types";
+    useCallback,
+    useEffect,
+    useLayoutEffect,
+    useRef,
+    useState,
+    type Dispatch,
+    type ReactNode,
+    type SetStateAction
+} from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { assessmentsApi, contestsApi, submissionsApi } from "../../../api/client";
+import type {
+    AssessmentContentResponse,
+    ContestSummary,
+    PublicQuestion,
+    SubmissionRecord,
+    SubmittedAnswerInput
+} from "../../../api/types";
+import { extractErrorMessage } from "../../../data/http/httpClient";
+import { formatDate, useApp } from "../../../shared/context";
 import { ExpiredAttempt, type AutoSubmitStatus } from "../components/ExpiredAttempt";
-import { resolveExpiredAttempt, type ExpiredAttemptResolution } from "../utils/resolveExpiredAttempt";
 import { watchAttemptDeadline } from "../utils/attemptDeadline";
+import { resolveExpiredAttempt, type ExpiredAttemptResolution } from "../utils/resolveExpiredAttempt";
+
+type DraftAnswerMap = Record<string, string | string[]>;
 
 export function Attempt(): ReactNode {
     const { contestId }: { contestId?: string } = useParams();
-    const { data, api, refresh, email }: ReturnType<typeof useApp> = useApp();
+    const { user }: ReturnType<typeof useApp> = useApp();
     const navigate: ReturnType<typeof useNavigate> = useNavigate();
-    const key: string = `lms-v2-draft:${email}:${contestId}`;
-    const hasDraft: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
-    const startedHere: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
-    const [answers, setAnswers]: [
-        Record<string, string[]>,
-        Dispatch<SetStateAction<Record<string, string[]>>>,
-    ] = useState<Record<string, string[]>>((): Record<string, string[]> => {
-        try {
-            const saved: string | null = localStorage.getItem(key);
-            if (saved === null) return {};
-            const parsed: unknown = JSON.parse(saved);
-            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-            hasDraft.current = true;
-            return parsed as Record<string, string[]>;
-        } catch {
-            return {};
-        }
-    });
-    const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
+
+    const draftKey: string = `lms-v3-draft:${user.id}:${contestId}`;
+    const hasDraftRef: { current: boolean } = useRef<boolean>(false);
+    const startedHereRef: { current: boolean } = useRef<boolean>(false);
+    const submittingRef: { current: boolean } = useRef<boolean>(false);
+    const checkingRef: { current: boolean } = useRef<boolean>(false);
+    const checkExpiredRef: { current: (() => Promise<void>) | null } =
+        useRef<(() => Promise<void>) | null>(null);
+
+    const [contest, setContest]: [
+        ContestSummary | null,
+        Dispatch<SetStateAction<ContestSummary | null>>
+    ] = useState<ContestSummary | null>(null);
+    const [content, setContent]: [
+        AssessmentContentResponse | null,
+        Dispatch<SetStateAction<AssessmentContentResponse | null>>
+    ] = useState<AssessmentContentResponse | null>(null);
+    const [answers, setAnswers]: [DraftAnswerMap, Dispatch<SetStateAction<DraftAnswerMap>>] =
+        useState<DraftAnswerMap>((): DraftAnswerMap => {
+            try {
+                const raw: string | null = localStorage.getItem(draftKey);
+                if (raw === null) {
+                    return {};
+                }
+                const parsed: unknown = JSON.parse(raw);
+                if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+                    return {};
+                }
+                hasDraftRef.current = true;
+                return parsed as DraftAnswerMap;
+            } catch {
+                return {};
+            }
+        });
     const [submissionStatus, setSubmissionStatus]: [
         AutoSubmitStatus,
-        Dispatch<SetStateAction<AutoSubmitStatus>>,
+        Dispatch<SetStateAction<AutoSubmitStatus>>
     ] = useState<AutoSubmitStatus>("waiting");
-    const [submissionId, setSubmissionId]: [string | null, Dispatch<SetStateAction<string | null>>] =
-        useState<string | null>(null);
-    const submitting: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
-    const checking: ReturnType<typeof useRef<boolean>> = useRef<boolean>(false);
-    const startRequest: ReturnType<typeof useRef<{ contestId: string; promise: Promise<void> } | null>> =
-        useRef<{ contestId: string; promise: Promise<void> } | null>(null);
-    const checkExpiredRef: ReturnType<typeof useRef<(() => Promise<void>) | null>> =
-        useRef<(() => Promise<void>) | null>(null);
-    const contest: Contest | undefined = data.contests.find(
-        (item): boolean => item.id === contestId,
-    );
-    const exam: Assessment | undefined = data.assessments.find(
-        (item: Assessment): boolean => item.id === contest?.assessmentId,
-    );
-    const group: Group | undefined = data.groups.find(
-        (item: Group): boolean => item.id === exam?.groupId,
-    );
+    const [submissionId, setSubmissionId]: [
+        string | null,
+        Dispatch<SetStateAction<string | null>>
+    ] = useState<string | null>(null);
+    const [loading, setLoading]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(true);
+    const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
 
-    async function submitAttempt(automatic: boolean): Promise<void> {
-        if (!contest || submitting.current) return;
-        submitting.current = true;
-        setSubmissionStatus("submitting");
-        setError("");
-        try {
-            await api.submit(contest.id, answers, automatic);
-        } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không thể nộp bài.");
-            setSubmissionStatus("failed");
-            submitting.current = false;
+    useEffect((): void => {
+        if (!contestId) {
             return;
         }
+        setLoading(true);
+        setError("");
+        void contestsApi
+            .getById(contestId)
+            .then(async (loadedContest): Promise<void> => {
+                setContest(loadedContest);
+                const loadedContent: AssessmentContentResponse = await assessmentsApi.getContent(
+                    loadedContest.assessment_id
+                );
+                setContent(loadedContent);
+                if (
+                    Date.now() >= Date.parse(loadedContest.start_time) &&
+                    Date.now() < Date.parse(loadedContest.end_time)
+                ) {
+                    startedHereRef.current = true;
+                }
+            })
+            .catch((reason: unknown): void => {
+                setError(extractErrorMessage(reason, "Unable to load contest attempt."));
+            })
+            .finally((): void => setLoading(false));
+    }, [contestId]);
 
-        try {
-            localStorage.removeItem(key);
-        } catch {
-            // Không ảnh hưởng đến bài đã nộp.
+    useEffect((): void => {
+        if (
+            !contest ||
+            Date.now() < Date.parse(contest.start_time) ||
+            Date.now() >= Date.parse(contest.end_time)
+        ) {
+            return;
         }
         try {
-            await refresh();
+            localStorage.setItem(draftKey, JSON.stringify(answers));
+            hasDraftRef.current = true;
         } catch {
-            // Bài đã nộp; dữ liệu sẽ được tải lại sau.
+            setError("Unable to save local draft in browser storage.");
         }
-        navigate(`/contests/${contest.id}`);
-    }
+    }, [answers, contest, draftKey]);
 
-    async function checkExpiredAttempt(): Promise<void> {
-        if (!contest || checking.current || submitting.current) return;
-        checking.current = true;
+    const buildPayloadAnswers: () => SubmittedAnswerInput[] =
+        useCallback((): SubmittedAnswerInput[] => {
+            if (!content?.questions) {
+                return Object.entries(answers).map(
+                    ([question_id, value]): SubmittedAnswerInput => ({
+                        question_id,
+                        student_response: value
+                    })
+                );
+            }
+            return content.questions.map((q: PublicQuestion): SubmittedAnswerInput => {
+                const raw: string | string[] | undefined = answers[q.id];
+                return {
+                    question_id: q.id,
+                    question_type: q.question_type,
+                    student_response:
+                        q.question_type === "MULTIPLE_CHOICE"
+                            ? Array.isArray(raw)
+                                ? raw
+                                : []
+                            : typeof raw === "string"
+                              ? raw
+                              : ""
+                };
+            });
+        }, [answers, content?.questions]);
+
+    const submitAttempt: (automatic: boolean) => Promise<void> = useCallback(
+        async (automatic: boolean): Promise<void> => {
+            if (!contest || submittingRef.current) {
+                return;
+            }
+            submittingRef.current = true;
+            setSubmissionStatus("submitting");
+            setError("");
+            try {
+                const created: SubmissionRecord = await submissionsApi.create(
+                    {
+                        submission_mode: "CONTEST",
+                        trigger_type: automatic ? "AUTO_TIMEOUT" : "MANUAL",
+                        contest_id: contest.id,
+                        answers: buildPayloadAnswers()
+                    },
+                    crypto.randomUUID()
+                );
+                try {
+                    localStorage.removeItem(draftKey);
+                } catch {
+                    return;
+                }
+                navigate(`/submissions/${created.id}`, { replace: true });
+            } catch (reason: unknown) {
+                setError(extractErrorMessage(reason, "Unable to submit attempt."));
+                setSubmissionStatus("failed");
+                submittingRef.current = false;
+            }
+        },
+        [buildPayloadAnswers, contest, draftKey, navigate]
+    );
+
+    const checkExpiredAttempt: () => Promise<void> = useCallback(async (): Promise<void> => {
+        if (!contest || checkingRef.current || submittingRef.current) {
+            return;
+        }
+        checkingRef.current = true;
         setSubmissionStatus("waiting");
         setError("");
         try {
-            const result: ExpiredAttemptResolution = await resolveExpiredAttempt(
-                api,
-                contest.id,
-                Boolean(hasDraft.current || startedHere.current),
+            const resolution: ExpiredAttemptResolution = await resolveExpiredAttempt(
+                async (): Promise<SubmissionRecord[]> => {
+                    const res = await submissionsApi.listMine({
+                        contest_id: contest.id,
+                        page: 1,
+                        limit: 5
+                    });
+                    return res.items;
+                },
+                hasDraftRef.current,
+                startedHereRef.current
             );
-            if (result.state === "IN_PROGRESS") {
+            if (resolution.state === "IN_PROGRESS") {
                 await submitAttempt(true);
-            } else if (result.state === "SUBMITTED") {
-                setSubmissionId(result.submissionId);
+            } else if (resolution.state === "SUBMITTED") {
+                setSubmissionId(resolution.submissionId);
                 setSubmissionStatus("submitted");
-            } else if (result.state === "DRAFT_MISSING") {
+            } else if (resolution.state === "DRAFT_MISSING") {
                 setSubmissionStatus("draft_missing");
             } else {
                 setSubmissionStatus("not_started");
             }
         } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không thể kiểm tra lượt làm bài.");
+            setError(extractErrorMessage(reason, "Unable to verify attempt state."));
             setSubmissionStatus("failed");
         } finally {
-            checking.current = false;
+            checkingRef.current = false;
         }
-    }
+    }, [contest, submitAttempt]);
 
     useLayoutEffect((): void => {
         checkExpiredRef.current = checkExpiredAttempt;
     });
 
-    useEffect((): void => {
-        if (!contest || !exam || !group || !hasAccess(group) || exam.source === "PDF" ||
-            Date.now() < Date.parse(contest.startAt) || Date.now() >= Date.parse(contest.endAt)) return;
-        try {
-            localStorage.setItem(key, JSON.stringify(answers));
-            hasDraft.current = true;
-        } catch {
-            setError("Không thể lưu bản nháp trong trình duyệt.");
-        }
-    }, [key, answers, contest?.id, contest?.startAt, contest?.endAt, exam?.id, exam?.source, group?.id, group?.role, group?.visibility]);
-    const canAttempt: boolean = Boolean(
-        contest && exam && group && hasAccess(group) && exam.source !== "PDF",
-    );
-
-    // TODO: Đối chiếu bắt đầu, bản nháp và tự nộp với contract Contest/Submission.
     useEffect((): (() => void) | undefined => {
-        if (!canAttempt || !contest || Date.now() < Date.parse(contest.startAt) ||
-            Date.now() >= Date.parse(contest.endAt)) return undefined;
-        let cancelled: boolean = false;
-        if (startRequest.current?.contestId !== contest.id) {
-            startRequest.current = { contestId: contest.id, promise: api.startAttempt(contest.id) };
+        if (!contest || Date.now() < Date.parse(contest.start_time)) {
+            return undefined;
         }
-        void startRequest.current.promise.then((): void => {
-            if (!cancelled) startedHere.current = true;
-        }).catch((reason: unknown): void => {
+        let cancelled: boolean = false;
+        const stop: () => void = watchAttemptDeadline(contest.end_time, (): void => {
             if (!cancelled) {
-                setError(reason instanceof Error ? reason.message : "Không thể bắt đầu bài làm.");
-                setSubmissionStatus("failed");
+                void checkExpiredRef.current?.();
             }
         });
-        return (): void => { cancelled = true; };
-    }, [api, canAttempt, contest?.id, contest?.startAt, contest?.endAt]);
+        return (): void => {
+            cancelled = true;
+            stop();
+        };
+    }, [contest]);
 
-    useEffect((): (() => void) | undefined => {
-        if (!canAttempt || !contest || Date.now() < Date.parse(contest.startAt)) return undefined;
-        let cancelled: boolean = false;
-        const stop: () => void = watchAttemptDeadline(contest.endAt, (): void => {
-            async function finish(): Promise<void> {
-                try {
-                    const request: { contestId: string; promise: Promise<void> } | null | undefined = startRequest.current;
-                    if (request && request.contestId === contest?.id) {
-                        await request.promise;
-                    }
-                    if (!cancelled) await checkExpiredRef.current?.();
-                } catch (reason: unknown) {
-                    if (!cancelled) {
-                        setError(reason instanceof Error ? reason.message : "Không thể bắt đầu bài làm.");
-                        setSubmissionStatus("failed");
-                    }
-                }
-            }
-            void finish();
-        });
-        return (): void => { cancelled = true; stop(); };
-    }, [canAttempt, contest?.id, contest?.startAt, contest?.endAt]);
-    if (
-        !contest ||
-        !exam ||
-        !group ||
-        !hasAccess(group) ||
-        exam.source === "PDF" ||
-        Date.now() < Date.parse(contest.startAt)
-    )
-        return <p className="empty">Kỳ thi không khả dụng.</p>;
-    if (Date.now() >= Date.parse(contest.endAt)) {
+    if (loading) {
+        return <p className="muted">Loading contest workspace...</p>;
+    }
+    if (!contest || !content || Date.now() < Date.parse(contest.start_time)) {
+        return (
+            <div className="page-enter">
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                )}
+                <p className="empty">Contest is not currently open for attempts.</p>
+            </div>
+        );
+    }
+    if (Date.now() >= Date.parse(contest.end_time)) {
         return (
             <ExpiredAttempt
                 contestId={contest.id}
                 status={submissionStatus}
                 error={error}
                 submissionId={submissionId}
-                onRetry={(): void => { void checkExpiredAttempt(); }}
+                onRetry={(): void => {
+                    void checkExpiredAttempt();
+                }}
             />
         );
     }
 
-    function updateOption(question: Question, option: string, checked: boolean): void {
-        const previous: string[] = answers[question.id] ?? [];
-        let selected: string[];
-
-        if (question.kind === "SINGLE") {
-            selected = [option];
-        } else if (checked) {
-            selected = [...previous, option];
-        } else {
-            selected = previous.filter((item: string): boolean => item !== option);
+    const questions: PublicQuestion[] = content.questions ?? [];
+    const answeredCount: number = questions.filter((q: PublicQuestion): boolean => {
+        const val: string | string[] | undefined = answers[q.id];
+        if (Array.isArray(val)) {
+            return val.length > 0;
         }
+        return typeof val === "string" && val.trim().length > 0;
+    }).length;
 
-        setAnswers({ ...answers, [question.id]: selected });
-    }
-
-    const answered: number = exam.questions.filter((question: Question): boolean =>
-        (answers[question.id] ?? []).some((value: string): boolean => !!value.trim()),
-    ).length;
     return (
-        <div className="attempt-page">
+        <div className="attempt-page page-enter">
             <div className="assessment-breadcrumb">
-                <Link to={`/contests/${contest.id}`}>Chi tiết kỳ thi</Link>
+                <Link to={`/contests/${contest.id}`}>Contest details</Link>
                 <span>/</span>
-                <span>Bài làm</span>
+                <span>Active attempt</span>
             </div>
             <header className="assessment-hero attempt-hero">
                 <span className="assessment-hero-icon">
@@ -222,80 +288,139 @@ export function Attempt(): ReactNode {
                 </span>
                 <div className="assessment-hero-content">
                     <div className="assessment-hero-label">
-                        <span>BÀI LÀM THỬ NGHIỆM</span>
+                        <span>CONTEST ATTEMPT</span>
                     </div>
                     <h1>{contest.title}</h1>
-                    <p>Kết thúc {date(contest.endAt)} · Bản nháp được lưu trên trình duyệt này.</p>
+                    <p>
+                        Closes {formatDate(contest.end_time)} · Answers are saved locally in this
+                        browser while you work.
+                    </p>
                 </div>
-                <span className="assessment-count">
-                    Đã trả lời {answered}/{exam.questions.length}
-                </span>
+                {questions.length > 0 && (
+                    <span className="assessment-count">
+                        Answered {answeredCount}/{questions.length}
+                    </span>
+                )}
             </header>
+
             <div className="form attempt-question-list">
-                {exam.questions.map(
-                    (question: Question, index: number): ReactNode => (
+                {content.content_format === "PDF" && content.pdf_url && (
+                    <section className="panel">
+                        <h2>PDF Assessment</h2>
+                        <p className="muted">
+                            Open the exam PDF document in a new tab while submitting your answers
+                            below.
+                        </p>
+                        <a
+                            className="button primary"
+                            href={content.pdf_url}
+                            target="_blank"
+                            rel="noreferrer"
+                        >
+                            Open PDF Exam
+                        </a>
+                    </section>
+                )}
+
+                {questions.map(
+                    (question: PublicQuestion, index: number): ReactNode => (
                         <section className="panel attempt-question" key={question.id}>
                             <p className="eyebrow">
-                                CÂU {index + 1} · {question.points} ĐIỂM
+                                QUESTION {index + 1} · {question.points} PTS ·{" "}
+                                {question.question_type}
                             </p>
-                            <h2>{question.text}</h2>
-                            {question.options.length ? (
+                            <h2>{question.prompt}</h2>
+                            {question.options && question.options.length > 0 ? (
                                 <div className="form">
-                                    {question.options.map(
-                                        (option: string, i: number): ReactNode => (
-                                            <label className="check option" key={i}>
+                                    {question.options.map((option): ReactNode => {
+                                        const currentVal: string | string[] | undefined =
+                                            answers[question.id];
+                                        const checked: boolean =
+                                            question.question_type === "MULTIPLE_CHOICE"
+                                                ? Array.isArray(currentVal) &&
+                                                  currentVal.includes(option.key)
+                                                : currentVal === option.key;
+                                        return (
+                                            <label className="check option" key={option.key}>
                                                 <input
                                                     type={
-                                                        question.kind === "SINGLE"
-                                                            ? "radio"
-                                                            : "checkbox"
+                                                        question.question_type === "MULTIPLE_CHOICE"
+                                                            ? "checkbox"
+                                                            : "radio"
                                                     }
                                                     name={question.id}
-                                                    checked={(answers[question.id] ?? []).includes(
-                                                        option,
-                                                    )}
-                                                    onChange={(event): void =>
-                                                        updateOption(
-                                                            question,
-                                                            option,
-                                                            event.target.checked,
-                                                        )
-                                                    }
+                                                    checked={checked}
+                                                    onChange={(event): void => {
+                                                        if (
+                                                            question.question_type ===
+                                                            "MULTIPLE_CHOICE"
+                                                        ) {
+                                                            const prev: string[] = Array.isArray(
+                                                                currentVal
+                                                            )
+                                                                ? currentVal
+                                                                : [];
+                                                            setAnswers({
+                                                                ...answers,
+                                                                [question.id]: event.target.checked
+                                                                    ? [...prev, option.key]
+                                                                    : prev.filter(
+                                                                          (k): boolean =>
+                                                                              k !== option.key
+                                                                      )
+                                                            });
+                                                            return;
+                                                        }
+                                                        setAnswers({
+                                                            ...answers,
+                                                            [question.id]: option.key
+                                                        });
+                                                    }}
                                                 />{" "}
-                                                {option}
+                                                <span>
+                                                    <strong>{option.key}.</strong> {option.text}
+                                                </span>
                                             </label>
-                                        ),
-                                    )}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <textarea
-                                    rows={question.kind === "ESSAY" ? 5 : 2}
-                                    value={answers[question.id]?.[0] ?? ""}
+                                    rows={question.question_type === "ESSAY" ? 5 : 2}
+                                    value={
+                                        typeof answers[question.id] === "string"
+                                            ? (answers[question.id] as string)
+                                            : ""
+                                    }
                                     onChange={(event): void =>
                                         setAnswers({
                                             ...answers,
-                                            [question.id]: [event.target.value],
+                                            [question.id]: event.target.value
                                         })
                                     }
                                 />
                             )}
                         </section>
-                    ),
+                    )
                 )}
+
                 {error && (
                     <p className="error" role="alert">
                         {error}
                     </p>
                 )}
+
                 <button
                     className="button primary attempt-submit"
                     type="button"
                     disabled={submissionStatus === "submitting"}
                     onClick={(): void => {
-                        if (window.confirm("Nộp bài thử nghiệm?")) void submitAttempt(false);
+                        if (window.confirm("Submit your answers now?")) {
+                            void submitAttempt(false);
+                        }
                     }}
                 >
-                    {submissionStatus === "submitting" ? "Đang nộp bài…" : "Nộp bài thử nghiệm"}
+                    {submissionStatus === "submitting" ? "Submitting..." : "Submit attempt"}
                 </button>
             </div>
         </div>

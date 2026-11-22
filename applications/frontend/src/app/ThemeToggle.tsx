@@ -4,7 +4,7 @@ import type { Theme } from "./theme";
 
 export function ThemeToggle({ theme, onToggle }: { theme: Theme; onToggle: () => void }): ReactNode {
     const label: string =
-        theme === "light" ? "Chuyển sang giao diện tối" : "Chuyển sang giao diện sáng";
+        theme === "light" ? "Switch to dark mode" : "Switch to light mode";
     return (
         <button
             className="theme-toggle"

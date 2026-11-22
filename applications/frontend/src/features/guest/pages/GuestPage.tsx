@@ -6,321 +6,652 @@ import {
     Globe2,
     GraduationCap,
     LockKeyhole,
-    Users,
+    Search,
+    Users
 } from "lucide-react";
-import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import {
+    useEffect,
+    useState,
+    type Dispatch,
+    type FormEvent,
+    type ReactNode,
+    type SetStateAction
+} from "react";
 import { Link, useParams } from "react-router-dom";
-import { getServices } from "../../../data/services";
-import type { Account } from "../../../data/contracts/services";
-import type { Assessment, Contest, Group, Snapshot } from "../../../types";
+import { contestsApi, groupsApi } from "../../../api/client";
+import type {
+    ContestPhase,
+    ContestSummary,
+    GroupSummary,
+    GroupVisibility,
+    PaginatedResult
+} from "../../../api/types";
+import { extractErrorMessage } from "../../../data/http/httpClient";
+import { Pagination } from "../../../shared/components/Pagination";
+import { formatDate, formatShortDate } from "../../../shared/context";
 
 type GuestPageProps = {
     themeControl: ReactNode;
 };
 
+const PAGE_LIMIT: number = 8;
+
 export function GuestPage({ themeControl }: GuestPageProps): ReactNode {
     const { groupId, contestId }: { groupId?: string; contestId?: string } = useParams();
-    const [activeSection, setActiveSection]: ["learning" | "users", Dispatch<SetStateAction<"learning" | "users">>] =
-        useState<"learning" | "users">("learning");
-    const [data, setData]: [Snapshot | null, Dispatch<SetStateAction<Snapshot | null>>] =
-        useState<Snapshot | null>(null);
-    const [users, setUsers]: [Account[], Dispatch<SetStateAction<Account[]>>] =
-        useState<Account[]>([]);
+    const [activeTab, setActiveTab]: [
+        "groups" | "contests",
+        Dispatch<SetStateAction<"groups" | "contests">>
+    ] = useState<"groups" | "contests">("groups");
+
+    const [groupSearchInput, setGroupSearchInput]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
+    const [groupSearch, setGroupSearch]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
+    const [groupVisibility, setGroupVisibility]: [
+        GroupVisibility | "ALL",
+        Dispatch<SetStateAction<GroupVisibility | "ALL">>
+    ] = useState<GroupVisibility | "ALL">("ALL");
+    const [groupPage, setGroupPage]: [number, Dispatch<SetStateAction<number>>] =
+        useState<number>(1);
+    const [groupsResult, setGroupsResult]: [
+        PaginatedResult<GroupSummary> | null,
+        Dispatch<SetStateAction<PaginatedResult<GroupSummary> | null>>
+    ] = useState<PaginatedResult<GroupSummary> | null>(null);
+
+    const [contestSearchInput, setContestSearchInput]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
+    const [contestSearch, setContestSearch]: [string, Dispatch<SetStateAction<string>>] =
+        useState<string>("");
+    const [contestPhase, setContestPhase]: [
+        ContestPhase | "ALL",
+        Dispatch<SetStateAction<ContestPhase | "ALL">>
+    ] = useState<ContestPhase | "ALL">("ALL");
+    const [contestPage, setContestPage]: [number, Dispatch<SetStateAction<number>>] =
+        useState<number>(1);
+    const [contestsResult, setContestsResult]: [
+        PaginatedResult<ContestSummary> | null,
+        Dispatch<SetStateAction<PaginatedResult<ContestSummary> | null>>
+    ] = useState<PaginatedResult<ContestSummary> | null>(null);
+
+    const [selectedGroup, setSelectedGroup]: [
+        GroupSummary | null,
+        Dispatch<SetStateAction<GroupSummary | null>>
+    ] = useState<GroupSummary | null>(null);
+    const [selectedContest, setSelectedContest]: [
+        ContestSummary | null,
+        Dispatch<SetStateAction<ContestSummary | null>>
+    ] = useState<ContestSummary | null>(null);
+    const [loading, setLoading]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(true);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
 
     useEffect((): void => {
-        // TODO: Lấy nhóm và kỳ thi được phép công khai qua Gateway theo quyền Guest.
-        const services: ReturnType<typeof getServices> = getServices();
-        void Promise.all([
-            services.createDataSource("").read(),
-            services.accounts.list(),
-        ]).then(([snapshot, accounts]: [Snapshot, Account[]]): void => {
-            setData(snapshot);
-            setUsers(accounts.filter((account: Account): boolean => account.status === "ACTIVE"));
-        }).catch((reason: unknown): void => {
-            setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu.");
-        });
-    }, []);
+        if (groupId) {
+            setLoading(true);
+            setError("");
+            void groupsApi
+                .getById(groupId)
+                .then((res): void => setSelectedGroup(res))
+                .catch((reason: unknown): void => {
+                    setError(extractErrorMessage(reason, "Unable to load group details."));
+                })
+                .finally((): void => setLoading(false));
+            return;
+        }
+        if (contestId) {
+            setLoading(true);
+            setError("");
+            void contestsApi
+                .getById(contestId)
+                .then((res): void => setSelectedContest(res))
+                .catch((reason: unknown): void => {
+                    setError(extractErrorMessage(reason, "Unable to load contest details."));
+                })
+                .finally((): void => setLoading(false));
+            return;
+        }
+        setSelectedGroup(null);
+        setSelectedContest(null);
+    }, [contestId, groupId]);
 
-    const group: Group | undefined = data?.groups.find((item: Group): boolean => item.id === groupId);
-    const publicContests: Contest[] = data?.contests.filter((item: Contest): boolean => {
-        const assessment: Assessment | undefined = data.assessments.find(
-            (exam: Assessment): boolean => exam.id === item.assessmentId,
-        );
-        return data.groups.some((itemGroup: Group): boolean =>
-            itemGroup.id === assessment?.groupId && itemGroup.visibility === "PUBLIC",
-        );
-    }) ?? [];
-    const contest: Contest | undefined = publicContests.find(
-        (item: Contest): boolean => item.id === contestId,
-    );
-    const contestAssessment: Assessment | undefined = data?.assessments.find(
-        (item: Assessment): boolean => item.id === contest?.assessmentId,
-    );
-    const contestGroup: Group | undefined = data?.groups.find(
-        (item: Group): boolean => item.id === contestAssessment?.groupId,
-    );
+    useEffect((): void => {
+        if (groupId || contestId) {
+            return;
+        }
+        setLoading(true);
+        setError("");
+        void groupsApi
+            .list({
+                page: groupPage,
+                limit: PAGE_LIMIT,
+                search: groupSearch || undefined,
+                visibility: groupVisibility === "ALL" ? undefined : groupVisibility
+            })
+            .then((res): void => setGroupsResult(res))
+            .catch((reason: unknown): void => {
+                setError(extractErrorMessage(reason, "Unable to load groups."));
+            })
+            .finally((): void => setLoading(false));
+    }, [contestId, groupId, groupPage, groupSearch, groupVisibility]);
+
+    useEffect((): void => {
+        if (groupId || contestId) {
+            return;
+        }
+        if (activeTab === "contests") {
+            setLoading(true);
+        }
+        void contestsApi
+            .list({
+                page: contestPage,
+                limit: PAGE_LIMIT,
+                visibility: "PUBLIC",
+                phase: contestPhase === "ALL" ? undefined : contestPhase,
+                search: contestSearch || undefined
+            })
+            .then((res): void => setContestsResult(res))
+            .catch((reason: unknown): void => {
+                if (activeTab === "contests") {
+                    setError(extractErrorMessage(reason, "Unable to load contests."));
+                }
+            })
+            .finally((): void => {
+                if (activeTab === "contests") {
+                    setLoading(false);
+                }
+            });
+    }, [activeTab, contestId, contestPage, contestPhase, contestSearch, groupId]);
+
+    function submitGroupSearch(event: FormEvent): void {
+        event.preventDefault();
+        setGroupPage(1);
+        setGroupSearch(groupSearchInput.trim());
+    }
+
+    function submitContestSearch(event: FormEvent): void {
+        event.preventDefault();
+        setContestPage(1);
+        setContestSearch(contestSearchInput.trim());
+    }
+
+    const totalGroupsCount: number = groupsResult?.pagination.total ?? 0;
+    const totalContestsCount: number = contestsResult?.pagination.total ?? 0;
 
     return (
         <div className="guest-page">
             <header className="top guest-header">
-                <Link className="brand" to="/discover" aria-label="LMS - Khám phá">
+                <Link className="brand" to="/discover" aria-label="LMS - Discover">
                     <span className="brand-icon">
                         <BookOpen size={19} strokeWidth={2.2} />
                     </span>
-                    <span className="brand-name">lms<span>.</span></span>
+                    <span className="brand-name">
+                        lms<span>.</span>
+                    </span>
                 </Link>
-                <span className="top-subtitle">Không gian học tập của bạn</span>
+                <span className="top-subtitle">Learning Workspace</span>
                 <div className="top-right guest-header-actions">
-                    <Link to="/users">Người dùng</Link>
                     {themeControl}
                     <Link className="button primary" to="/login">
-                        Đăng nhập <ArrowRight size={16} />
+                        Sign in <ArrowRight size={16} />
                     </Link>
                 </div>
             </header>
-            <main className="main guest-main">
-                <div className="demo">
-                    <span className="demo-dot" />
-                    <strong>CHẾ ĐỘ KHÁCH</strong>
-                    <span>Khám phá trước, đăng nhập để tham gia và làm bài.</span>
-                </div>
-                {error && <p className="error" role="alert">{error}</p>}
-                {!data && !error && <p>Đang tải dữ liệu…</p>}
-                {data && (groupId || contestId) && (
+
+            <main className="main guest-main page-enter">
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                )}
+
+                {(groupId || contestId) && (
                     <Link className="guest-back" to="/discover">
-                        <ArrowLeft size={16} /> Quay lại khám phá
+                        <ArrowLeft size={16} /> Back to Discover
                     </Link>
                 )}
-                {data && groupId && (
-                    group ? (
-                        <section className="guest-detail">
-                            <div className="guest-detail-heading">
-                                <span className="guest-detail-icon"><Users size={25} /></span>
-                                <div>
-                                    <p className="eyebrow">NHÓM HỌC TẬP</p>
-                                    <h1>{group.name}</h1>
-                                    <p>{group.description || "Chưa có mô tả cho nhóm này."}</p>
-                                </div>
-                            </div>
-                            <div className="panel guest-detail-panel">
-                                <h2>Thông tin nhóm</h2>
-                                <div className="guest-detail-row">
-                                    <span>Phạm vi</span>
-                                    <strong>{group.visibility === "PUBLIC" ? "Công khai" : "Riêng tư"}</strong>
-                                </div>
-                                <div className="guest-detail-row">
-                                    <span>Tham gia</span>
-                                    <strong>Cần đăng nhập</strong>
-                                </div>
-                                <p className="guest-detail-hint">
-                                    Đăng nhập để tham gia nhóm và khám phá các hoạt động học tập.
-                                </p>
-                                <Link className="button primary" to="/login">
-                                    Đăng nhập để tham gia <ArrowRight size={16} />
-                                </Link>
-                            </div>
-                        </section>
-                    ) : <p className="empty">Không tìm thấy nhóm.</p>
+
+                {loading && !selectedGroup && !selectedContest && (groupId || contestId) && (
+                    <p className="muted">Loading details...</p>
                 )}
-                {data && contestId && (
-                    contest ? (
-                        <section className="guest-detail">
-                            <div className="guest-detail-heading">
-                                <span className="guest-detail-icon"><GraduationCap size={25} /></span>
-                                <div>
-                                    <p className="eyebrow">KỲ THI CÔNG KHAI</p>
-                                    <h1>{contest.title}</h1>
-                                    <p>{contestGroup?.name ?? "Kỳ thi cộng đồng"}</p>
-                                </div>
+
+                {groupId && selectedGroup && (
+                    <section className="guest-detail">
+                        <div className="guest-detail-heading">
+                            <span className="guest-detail-icon">
+                                <Users size={25} />
+                            </span>
+                            <div>
+                                <p className="eyebrow">LEARNING GROUP</p>
+                                <h1>{selectedGroup.name}</h1>
+                                <p>{selectedGroup.description || "No group description provided."}</p>
                             </div>
-                            <div className="panel guest-detail-panel">
-                                <h2>Thông tin kỳ thi</h2>
-                                <div className="guest-detail-row">
-                                    <span>Bắt đầu</span>
-                                    <strong>{new Date(contest.startAt).toLocaleString("vi-VN")}</strong>
-                                </div>
-                                <div className="guest-detail-row">
-                                    <span>Kết thúc</span>
-                                    <strong>{new Date(contest.endAt).toLocaleString("vi-VN")}</strong>
-                                </div>
-                                <p className="guest-detail-hint">
-                                    Đăng nhập để tham gia kỳ thi và lưu kết quả của bạn.
-                                </p>
-                                <Link className="button primary" to="/login">
-                                    Đăng nhập để tham gia <ArrowRight size={16} />
-                                </Link>
+                        </div>
+                        <div className="panel guest-detail-panel">
+                            <h2>Group overview</h2>
+                            <div className="guest-detail-row">
+                                <span>Visibility</span>
+                                <strong>{selectedGroup.visibility}</strong>
                             </div>
-                        </section>
-                    ) : <p className="empty">Không tìm thấy kỳ thi công khai.</p>
+                            <div className="guest-detail-row">
+                                <span>Join policy</span>
+                                <strong>{selectedGroup.join_policy}</strong>
+                            </div>
+                            <div className="guest-detail-row">
+                                <span>Members</span>
+                                <strong>{selectedGroup.member_count}</strong>
+                            </div>
+                            <div className="guest-detail-row">
+                                <span>Group code</span>
+                                <strong>{selectedGroup.group_code}</strong>
+                            </div>
+                            {selectedGroup.owner && (
+                                <div className="guest-detail-row">
+                                    <span>Owner</span>
+                                    <strong>{selectedGroup.owner.display_name}</strong>
+                                </div>
+                            )}
+                            <p className="guest-detail-hint">
+                                Sign in to join this group and participate in contests and group
+                                practice.
+                            </p>
+                            <Link className="button primary" to="/login">
+                                Sign in to join <ArrowRight size={16} />
+                            </Link>
+                        </div>
+                    </section>
                 )}
-                {data && !groupId && !contestId && (
+
+                {contestId && selectedContest && (
+                    <section className="guest-detail">
+                        <div className="guest-detail-heading">
+                            <span className="guest-detail-icon">
+                                <GraduationCap size={25} />
+                            </span>
+                            <div>
+                                <p className="eyebrow">PUBLIC CONTEST</p>
+                                <h1>{selectedContest.title}</h1>
+                                <p>{selectedContest.group?.name ?? "Community Contest"}</p>
+                            </div>
+                        </div>
+                        <div className="panel guest-detail-panel">
+                            <h2>Contest schedule &amp; rules</h2>
+                            <div className="guest-detail-row">
+                                <span>Phase</span>
+                                <strong>{selectedContest.phase}</strong>
+                            </div>
+                            <div className="guest-detail-row">
+                                <span>Starts</span>
+                                <strong>{formatDate(selectedContest.start_time)}</strong>
+                            </div>
+                            <div className="guest-detail-row">
+                                <span>Ends</span>
+                                <strong>{formatDate(selectedContest.end_time)}</strong>
+                            </div>
+                            <div className="guest-detail-row">
+                                <span>Attempts</span>
+                                <strong>
+                                    {selectedContest.submission_policy === "MULTIPLE"
+                                        ? "Multiple (final attempt scored)"
+                                        : "Single attempt"}
+                                </strong>
+                            </div>
+                            {selectedContest.organizer && (
+                                <div className="guest-detail-row">
+                                    <span>Organizer</span>
+                                    <strong>{selectedContest.organizer.display_name}</strong>
+                                </div>
+                            )}
+                            <p className="guest-detail-hint">
+                                Sign in to join the contest and record your submission results.
+                            </p>
+                            <Link className="button primary" to="/login">
+                                Sign in to participate <ArrowRight size={16} />
+                            </Link>
+                        </div>
+                    </section>
+                )}
+
+                {!groupId && !contestId && (
                     <div className="dashboard guest-discover">
                         <section className="dashboard-welcome guest-welcome">
                             <div className="welcome-copy">
                                 <p className="welcome-kicker">
-                                    <span /> KHÔNG GIAN HỌC TẬP CỦA BẠN
+                                    <span /> PUBLIC LEARNING SPACE
                                 </p>
                                 <h1>
-                                    Học cùng nhau.<br />
-                                    <span>Tiến bộ mỗi ngày.</span>
+                                    Learn together.
+                                    <br />
+                                    <span>Grow every day.</span>
                                 </h1>
-                                <p>Khám phá cộng đồng học tập và những kỳ thi phù hợp với bạn.</p>
+                                <p>
+                                    Explore active study groups and join scheduled community
+                                    contests.
+                                </p>
                                 <Link className="button primary guest-welcome-action" to="/login">
-                                    Bắt đầu học tập <ArrowRight size={16} />
+                                    Get started <ArrowRight size={16} />
                                 </Link>
                             </div>
                             <div className="welcome-summary guest-summary">
-                                <span className="summary-icon"><GraduationCap size={23} /></span>
+                                <span className="summary-icon">
+                                    <GraduationCap size={23} />
+                                </span>
                                 <div>
-                                    <strong>{data.groups.length}</strong>
-                                    <span>nhóm học tập</span>
+                                    <strong>
+                                        {activeTab === "groups"
+                                            ? totalGroupsCount
+                                            : totalContestsCount}
+                                    </strong>
+                                    <span>
+                                        {activeTab === "groups"
+                                            ? "learning groups"
+                                            : "public contests"}
+                                    </span>
                                 </div>
                             </div>
                         </section>
-                        <div className="tabs guest-discover-tabs" role="tablist" aria-label="Khám phá">
+
+                        <div className="tabs guest-discover-tabs" role="tablist" aria-label="Discover">
                             <button
-                                className={activeSection === "learning" ? "active" : ""}
-                                id="guest-learning-tab"
+                                className={activeTab === "groups" ? "active" : ""}
+                                id="guest-groups-tab"
                                 type="button"
                                 role="tab"
-                                aria-selected={activeSection === "learning"}
-                                aria-controls="guest-learning-panel"
-                                onClick={(): void => setActiveSection("learning")}
+                                aria-selected={activeTab === "groups"}
+                                aria-controls="guest-groups-panel"
+                                onClick={(): void => setActiveTab("groups")}
                             >
-                                Đề thi &amp; kỳ thi
+                                Groups
                             </button>
                             <button
-                                className={activeSection === "users" ? "active" : ""}
-                                id="guest-users-tab"
+                                className={activeTab === "contests" ? "active" : ""}
+                                id="guest-contests-tab"
                                 type="button"
                                 role="tab"
-                                aria-selected={activeSection === "users"}
-                                aria-controls="guest-users-panel"
-                                onClick={(): void => setActiveSection("users")}
+                                aria-selected={activeTab === "contests"}
+                                aria-controls="guest-contests-panel"
+                                onClick={(): void => setActiveTab("contests")}
                             >
-                                Người dùng
+                                Contests
                             </button>
                         </div>
-                        {activeSection === "learning" ? (
-                            <div id="guest-learning-panel" role="tabpanel" aria-labelledby="guest-learning-tab">
-                        <section className="discover-section guest-section" aria-labelledby="guest-groups-title">
-                            <div className="discover-heading">
-                                <div>
-                                    <p className="eyebrow">CỘNG ĐỒNG HỌC TẬP</p>
-                                    <h2 id="guest-groups-title">Khám phá nhóm</h2>
-                                    <p>Tìm một không gian để cùng nhau học hỏi và phát triển.</p>
+
+                        {activeTab === "groups" ? (
+                            <section
+                                id="guest-groups-panel"
+                                className="discover-section guest-section"
+                                role="tabpanel"
+                                aria-labelledby="guest-groups-tab"
+                            >
+                                <div className="discover-heading">
+                                    <div>
+                                        <p className="eyebrow">COMMUNITIES</p>
+                                        <h2>Explore groups</h2>
+                                        <p>Find a group to collaborate and access contests.</p>
+                                    </div>
+                                    <span className="result-count">{totalGroupsCount} groups</span>
                                 </div>
-                                <span className="result-count">{data.groups.length} nhóm</span>
-                            </div>
-                            <div className="grid exam-grid">
-                                {data.groups.map((item: Group): ReactNode => (
-                                    <Link
-                                        className="exam-card guest-card"
-                                        to={`/discover/groups/${item.id}`}
-                                        key={item.id}
-                                    >
-                                        <div className="exam-card-top">
-                                            <span className="exam-icon"><Users size={20} /></span>
-                                            <span className="exam-visibility">
-                                                {item.visibility === "PUBLIC" ? (
-                                                    <Globe2 size={13} />
-                                                ) : (
-                                                    <LockKeyhole size={13} />
-                                                )}
-                                                {item.visibility === "PUBLIC" ? "Công khai" : "Riêng tư"}
-                                            </span>
-                                        </div>
-                                        <div className="exam-card-body">
-                                            <h3>{item.name}</h3>
-                                            <p>{item.description || "Cùng nhau học tập và phát triển."}</p>
-                                        </div>
-                                        <div className="exam-card-footer">
-                                            <span>Nhóm học tập</span>
-                                            <strong>Xem nhóm <ArrowRight size={14} /></strong>
-                                        </div>
-                                    </Link>
-                                ))}
-                            </div>
-                        </section>
-                        <section className="discover-section guest-section" aria-labelledby="guest-contests-title">
-                            <div className="discover-heading">
-                                <div>
-                                    <p className="eyebrow">THỬ THÁCH BẢN THÂN</p>
-                                    <h2 id="guest-contests-title">Kỳ thi công khai</h2>
-                                    <p>Khám phá các kỳ thi được tổ chức bởi cộng đồng.</p>
+                                <div className="discover-controls">
+                                    <form className="home-search-field" onSubmit={submitGroupSearch}>
+                                        <Search size={18} aria-hidden="true" />
+                                        <input
+                                            type="search"
+                                            aria-label="Search groups by name or description"
+                                            placeholder="Search groups by name or code..."
+                                            value={groupSearchInput}
+                                            onChange={(event): void => {
+                                                const next: string = event.target.value;
+                                                setGroupSearchInput(next);
+                                                if (next === "") {
+                                                    setGroupPage(1);
+                                                    setGroupSearch("");
+                                                }
+                                            }}
+                                        />
+                                    </form>
+                                    <div className="exam-filters" aria-label="Filter groups by visibility">
+                                        {(["ALL", "PUBLIC", "PRIVATE"] as const).map(
+                                            (value): ReactNode => (
+                                                <button
+                                                    key={value}
+                                                    type="button"
+                                                    aria-pressed={groupVisibility === value}
+                                                    className={
+                                                        groupVisibility === value ? "selected" : ""
+                                                    }
+                                                    onClick={(): void => {
+                                                        setGroupVisibility(value);
+                                                        setGroupPage(1);
+                                                    }}
+                                                >
+                                                    {value === "ALL"
+                                                        ? "All"
+                                                        : value === "PUBLIC"
+                                                          ? "Public"
+                                                          : "Private"}
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
-                                <span className="result-count">{publicContests.length} kỳ thi</span>
-                            </div>
-                            {publicContests.length ? (
-                                <div className="grid exam-grid">
-                                    {publicContests.map((item: Contest): ReactNode => (
-                                        <Link
-                                            className="exam-card guest-card"
-                                            to={`/discover/contests/${item.id}`}
-                                            key={item.id}
-                                        >
-                                            <div className="exam-card-top">
-                                                <span className="exam-icon"><GraduationCap size={20} /></span>
-                                                <span className="exam-visibility"><Globe2 size={13} /> Công khai</span>
-                                            </div>
-                                            <div className="exam-card-body">
-                                                <h3>{item.title}</h3>
-                                                <p>Đăng nhập để tham gia và lưu kết quả.</p>
-                                            </div>
-                                            <div className="exam-card-footer">
-                                                <span>
-                                                    <CalendarDays size={15} /> Đến {new Date(item.endAt).toLocaleDateString("vi-VN")}
-                                                </span>
-                                                <strong>Xem kỳ thi <ArrowRight size={14} /></strong>
-                                            </div>
-                                        </Link>
-                                    ))}
-                                </div>
-                            ) : (
-                                <div className="empty dashboard-empty">
-                                    <CalendarDays size={23} />
-                                    <h3>Chưa có kỳ thi công khai</h3>
-                                    <p>Hãy quay lại sau để khám phá các kỳ thi mới.</p>
-                                </div>
-                            )}
-                        </section>
-                            </div>
+                                {loading && !groupsResult ? (
+                                    <p className="muted">Loading groups...</p>
+                                ) : groupsResult && groupsResult.items.length > 0 ? (
+                                    <>
+                                        <ul className="resource-list">
+                                            {groupsResult.items.map(
+                                                (item: GroupSummary): ReactNode => (
+                                                    <li key={item.id}>
+                                                        <Link
+                                                            className="resource-row"
+                                                            to={`/discover/groups/${item.id}`}
+                                                        >
+                                                            <span className="resource-row-icon">
+                                                                <Users size={18} />
+                                                            </span>
+                                                            <div className="resource-row-main">
+                                                                <div className="resource-row-title">
+                                                                    <strong>{item.name}</strong>
+                                                                    <span className="badge">
+                                                                        {item.visibility ===
+                                                                        "PUBLIC" ? (
+                                                                            <Globe2 size={12} />
+                                                                        ) : (
+                                                                            <LockKeyhole size={12} />
+                                                                        )}
+                                                                        {item.visibility ===
+                                                                        "PUBLIC"
+                                                                            ? "Public"
+                                                                            : "Private"}
+                                                                    </span>
+                                                                </div>
+                                                                <p>
+                                                                    {item.description ||
+                                                                        "Collaborative learning space."}
+                                                                </p>
+                                                                <div className="resource-row-meta">
+                                                                    <span>
+                                                                        Code: {item.group_code}
+                                                                    </span>
+                                                                    <span>
+                                                                        {item.member_count} members
+                                                                    </span>
+                                                                    {item.owner && (
+                                                                        <span>
+                                                                            Owner:{" "}
+                                                                            {
+                                                                                item.owner
+                                                                                    .display_name
+                                                                            }
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <span className="resource-row-cta">
+                                                                View group <ArrowRight size={14} />
+                                                            </span>
+                                                        </Link>
+                                                    </li>
+                                                )
+                                            )}
+                                        </ul>
+                                        <Pagination
+                                            pagination={groupsResult.pagination}
+                                            onPageChange={setGroupPage}
+                                            itemLabel="groups"
+                                        />
+                                    </>
+                                ) : (
+                                    <div className="empty dashboard-empty">
+                                        <Users size={23} />
+                                        <h3>No matching groups</h3>
+                                        <p>Try another keyword or visibility filter.</p>
+                                    </div>
+                                )}
+                            </section>
                         ) : (
-                        <section id="guest-users-panel" className="discover-section guest-section" role="tabpanel" aria-labelledby="guest-users-tab">
-                            <div className="discover-heading">
-                                <div>
-                                    <p className="eyebrow">CỘNG ĐỒNG LMS</p>
-                                    <h2 id="guest-users-title">Khám phá người dùng</h2>
-                                    <p>Xem hồ sơ công khai của các thành viên trên hệ thống.</p>
+                            <section
+                                id="guest-contests-panel"
+                                className="discover-section guest-section"
+                                role="tabpanel"
+                                aria-labelledby="guest-contests-tab"
+                            >
+                                <div className="discover-heading">
+                                    <div>
+                                        <p className="eyebrow">CHALLENGES</p>
+                                        <h2>Public contests</h2>
+                                        <p>Scheduled competitions open across the platform.</p>
+                                    </div>
+                                    <span className="result-count">
+                                        {totalContestsCount} contests
+                                    </span>
                                 </div>
-                                <span className="result-count">{users.length} người dùng</span>
-                            </div>
-                            {users.length ? (
-                                <ul className="admin-list">
-                                    {users.map((account: Account): ReactNode => (
-                                        <li className="admin-row" key={account.email}>
-                                            <span className="admin-row-icon"><Users size={18} /></span>
-                                            <span className="admin-row-copy">
-                                                <strong>{account.displayName}</strong>
-                                                <small>{account.bio || "Chưa có giới thiệu."}</small>
-                                            </span>
-                                            <Link
-                                                className="button"
-                                                to={`/users/${encodeURIComponent(account.email)}`}
-                                            >
-                                                Xem hồ sơ <ArrowRight size={14} />
-                                            </Link>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : (
-                                <div className="empty dashboard-empty">
-                                    <Users size={23} />
-                                    <h3>Chưa có hồ sơ công khai</h3>
+                                <div className="discover-controls">
+                                    <form
+                                        className="home-search-field"
+                                        onSubmit={submitContestSearch}
+                                    >
+                                        <Search size={18} aria-hidden="true" />
+                                        <input
+                                            type="search"
+                                            aria-label="Search contests by title"
+                                            placeholder="Search contests by title..."
+                                            value={contestSearchInput}
+                                            onChange={(event): void => {
+                                                const next: string = event.target.value;
+                                                setContestSearchInput(next);
+                                                if (next === "") {
+                                                    setContestPage(1);
+                                                    setContestSearch("");
+                                                }
+                                            }}
+                                        />
+                                    </form>
+                                    <div className="exam-filters" aria-label="Filter contests by phase">
+                                        {(
+                                            ["ALL", "ONGOING", "UPCOMING", "ENDED"] as const
+                                        ).map(
+                                            (value): ReactNode => (
+                                                <button
+                                                    key={value}
+                                                    type="button"
+                                                    aria-pressed={contestPhase === value}
+                                                    className={
+                                                        contestPhase === value ? "selected" : ""
+                                                    }
+                                                    onClick={(): void => {
+                                                        setContestPhase(value);
+                                                        setContestPage(1);
+                                                    }}
+                                                >
+                                                    {value === "ALL"
+                                                        ? "All"
+                                                        : value === "ONGOING"
+                                                          ? "Ongoing"
+                                                          : value === "UPCOMING"
+                                                            ? "Upcoming"
+                                                            : "Ended"}
+                                                </button>
+                                            )
+                                        )}
+                                    </div>
                                 </div>
-                            )}
-                        </section>
+                                {loading && !contestsResult ? (
+                                    <p className="muted">Loading contests...</p>
+                                ) : contestsResult && contestsResult.items.length > 0 ? (
+                                    <>
+                                        <ul className="resource-list">
+                                            {contestsResult.items.map(
+                                                (item: ContestSummary): ReactNode => (
+                                                    <li key={item.id}>
+                                                        <Link
+                                                            className="resource-row"
+                                                            to={`/discover/contests/${item.id}`}
+                                                        >
+                                                            <span className="resource-row-icon">
+                                                                <GraduationCap size={18} />
+                                                            </span>
+                                                            <div className="resource-row-main">
+                                                                <div className="resource-row-title">
+                                                                    <strong>{item.title}</strong>
+                                                                    <span className="badge">
+                                                                        {item.phase}
+                                                                    </span>
+                                                                </div>
+                                                                <p>
+                                                                    {item.description ||
+                                                                        "Scheduled assessment contest."}
+                                                                </p>
+                                                                <div className="resource-row-meta">
+                                                                    <span>
+                                                                        <CalendarDays size={13} />{" "}
+                                                                        {formatShortDate(
+                                                                            item.start_time
+                                                                        )}{" "}
+                                                                        —{" "}
+                                                                        {formatShortDate(
+                                                                            item.end_time
+                                                                        )}
+                                                                    </span>
+                                                                    <span>
+                                                                        {item.submission_policy ===
+                                                                        "MULTIPLE"
+                                                                            ? "Multiple attempts"
+                                                                            : "Single attempt"}
+                                                                    </span>
+                                                                    {item.organizer && (
+                                                                        <span>
+                                                                            Host:{" "}
+                                                                            {
+                                                                                item.organizer
+                                                                                    .display_name
+                                                                            }
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <span className="resource-row-cta">
+                                                                View contest{" "}
+                                                                <ArrowRight size={14} />
+                                                            </span>
+                                                        </Link>
+                                                    </li>
+                                                )
+                                            )}
+                                        </ul>
+                                        <Pagination
+                                            pagination={contestsResult.pagination}
+                                            onPageChange={setContestPage}
+                                            itemLabel="contests"
+                                        />
+                                    </>
+                                ) : (
+                                    <div className="empty dashboard-empty">
+                                        <CalendarDays size={23} />
+                                        <h3>No public contests</h3>
+                                        <p>Check back later for upcoming community contests.</p>
+                                    </div>
+                                )}
+                            </section>
                         )}
                     </div>
                 )}

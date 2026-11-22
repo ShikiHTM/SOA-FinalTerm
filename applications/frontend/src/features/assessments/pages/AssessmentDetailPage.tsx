@@ -8,122 +8,229 @@ import {
     Pencil,
     Play,
     Trash2,
-    Users,
+    Users
 } from "lucide-react";
-import { useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import {
+    useCallback,
+    useEffect,
+    useState,
+    type Dispatch,
+    type ReactNode,
+    type SetStateAction
+} from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { canManage, hasAccess, useApp } from "../../../shared/context";
-import type { Assessment, Group, Question } from "../../../types";
+import { assessmentsApi, groupsApi } from "../../../api/client";
+import type {
+    AnswerKeyDocument,
+    AssessmentContentResponse,
+    AssessmentMetadata,
+    FavoriteAssessmentItem,
+    GroupSummary,
+    PublicQuestion
+} from "../../../api/types";
+import { extractErrorMessage } from "../../../data/http/httpClient";
+import { canManage, useApp } from "../../../shared/context";
 
 export function AssessmentDetail(): ReactNode {
     const { assessmentId }: { assessmentId?: string } = useParams();
     const navigate: ReturnType<typeof useNavigate> = useNavigate();
-    const { data, api, refresh }: ReturnType<typeof useApp> = useApp();
+    const { user }: ReturnType<typeof useApp> = useApp();
+
+    const [assessment, setAssessment]: [
+        AssessmentMetadata | null,
+        Dispatch<SetStateAction<AssessmentMetadata | null>>
+    ] = useState<AssessmentMetadata | null>(null);
+    const [group, setGroup]: [GroupSummary | null, Dispatch<SetStateAction<GroupSummary | null>>] =
+        useState<GroupSummary | null>(null);
+    const [content, setContent]: [
+        AssessmentContentResponse | null,
+        Dispatch<SetStateAction<AssessmentContentResponse | null>>
+    ] = useState<AssessmentContentResponse | null>(null);
+    const [answerKey, setAnswerKey]: [
+        AnswerKeyDocument | null,
+        Dispatch<SetStateAction<AnswerKeyDocument | null>>
+    ] = useState<AnswerKeyDocument | null>(null);
+    const [isFavorited, setIsFavorited]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(false);
+    const [loading, setLoading]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(true);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
-    const exam: Assessment | undefined = data.assessments.find(
-        (item: Assessment): boolean => item.id === assessmentId,
-    );
-    const group: Group | undefined = data.groups.find(
-        (item: Group): boolean => item.id === exam?.groupId,
-    );
-    if (!exam || !group) return <p className="empty">Không tìm thấy đề này.</p>;
+
+    const loadAssessment: () => Promise<void> = useCallback(async (): Promise<void> => {
+        if (!assessmentId) {
+            return;
+        }
+        setLoading(true);
+        setError("");
+        try {
+            const loaded: AssessmentMetadata = await assessmentsApi.getById(assessmentId);
+            setAssessment(loaded);
+
+            const owningGroup: GroupSummary | null =
+                loaded.group ?? (await groupsApi.getById(loaded.group_id).catch((): null => null));
+            setGroup(owningGroup);
+
+            const isManager: boolean = owningGroup
+                ? canManage(owningGroup, user.system_role)
+                : user.system_role === "ADMIN" || loaded.created_by === user.id;
+
+            const favRes = await assessmentsApi.listFavorites({ page: 1, limit: 100 });
+            setIsFavorited(
+                favRes.items.some(
+                    (item: FavoriteAssessmentItem): boolean => item.assessment.id === loaded.id
+                )
+            );
+
+            if (isManager || loaded.is_practice_enabled) {
+                const loadedContent: AssessmentContentResponse = await assessmentsApi.getContent(
+                    loaded.id
+                );
+                setContent(loadedContent);
+                if (isManager) {
+                    const keyDoc: AnswerKeyDocument | null = await assessmentsApi
+                        .getAnswerKey(loaded.id)
+                        .catch((): null => null);
+                    setAnswerKey(keyDoc);
+                } else {
+                    setAnswerKey(null);
+                }
+            } else {
+                setContent(null);
+                setAnswerKey(null);
+            }
+        } catch (reason: unknown) {
+            setError(extractErrorMessage(reason, "Unable to load assessment."));
+        } finally {
+            setLoading(false);
+        }
+    }, [assessmentId, user.id, user.system_role]);
+
+    useEffect((): void => {
+        void loadAssessment();
+    }, [loadAssessment]);
 
     async function toggleFavorite(): Promise<void> {
-        try {
-            if (!exam) return;
-            await api.toggleFavorite(exam.id);
-            await refresh();
-            setError("");
-        } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không thể cập nhật đề yêu thích.");
+        if (!assessment) {
+            return;
         }
-    }
-    async function deleteAssessment(): Promise<void> {
-        if (!exam || !group || !window.confirm("Xóa đề này cùng các kỳ thi và bài nộp liên quan? Không thể hoàn tác.")) return;
+        setError("");
         try {
-            await api.deleteAssessment(exam.id);
-            await refresh();
-            navigate(`/groups/${group.id}`);
+            if (isFavorited) {
+                await assessmentsApi.unfavorite(assessment.id);
+                setIsFavorited(false);
+            } else {
+                await assessmentsApi.favorite(assessment.id);
+                setIsFavorited(true);
+            }
         } catch (reason: unknown) {
-            setError(reason instanceof Error ? reason.message : "Không thể xóa đề.");
+            setError(extractErrorMessage(reason, "Unable to update favorite status."));
         }
     }
 
-    const accessible: boolean = hasAccess(group);
+    async function handleDelete(): Promise<void> {
+        if (
+            !assessment ||
+            !window.confirm(
+                "Delete this assessment? Linked contests and submissions may be affected. This cannot be undone."
+            )
+        ) {
+            return;
+        }
+        try {
+            await assessmentsApi.delete(assessment.id);
+            navigate(`/groups/${assessment.group_id}`, { replace: true });
+        } catch (reason: unknown) {
+            setError(extractErrorMessage(reason, "Unable to delete assessment."));
+        }
+    }
+
+    if (loading && !assessment) {
+        return <p className="muted">Loading assessment...</p>;
+    }
+    if (!assessment) {
+        return (
+            <div className="page-enter">
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                )}
+                <p className="empty">Assessment not found.</p>
+            </div>
+        );
+    }
+
+    const managerView: boolean = group
+        ? canManage(group, user.system_role)
+        : user.system_role === "ADMIN" || assessment.created_by === user.id;
+    const contestOnlyLocked: boolean = !managerView && !assessment.is_practice_enabled;
     const canPractice: boolean =
-        accessible && exam.source === "DIRECT" && (group.visibility === "PUBLIC" || exam.practice);
-    const totalPoints: number = exam.questions.reduce(
-        (total: number, question: Question): number => total + question.points,
-        0,
-    );
+        assessment.is_practice_enabled && assessment.content_format === "JSON";
 
     return (
-        <div className="assessment-detail-page">
+        <div className="assessment-detail-page page-enter">
             <div className="assessment-breadcrumb">
-                <Link to="/">Trang chủ</Link>
+                <Link to={`/groups/${assessment.group_id}`}>
+                    {group?.name ?? "Learning Group"}
+                </Link>
                 <span>/</span>
-                <span>Chi tiết đề</span>
+                <span>Assessment details</span>
             </div>
+
             <header className="assessment-hero">
                 <span className="assessment-hero-icon">
                     <BookOpen size={26} strokeWidth={1.7} />
                 </span>
                 <div className="assessment-hero-content">
                     <div className="assessment-hero-label">
-                        <span>ĐỀ THI</span>
+                        <span>ASSESSMENT</span>
                         <span className="assessment-visibility">
-                            {group.visibility === "PRIVATE" ? (
-                                <LockKeyhole size={13} />
-                            ) : (
+                            {assessment.visibility === "PUBLIC" ? (
                                 <Globe2 size={13} />
+                            ) : (
+                                <LockKeyhole size={13} />
                             )}
-                            {group.visibility === "PRIVATE" ? "Riêng tư" : "Công khai"}
+                            {assessment.visibility}
                         </span>
+                        <span className="badge">{assessment.assessment_type}</span>
                     </div>
-                    <h1>{exam.title}</h1>
-                    <p>{exam.description || "Khám phá nội dung và bắt đầu học tập."}</p>
-                    <Link className="assessment-group-link" to={`/groups/${group.id}`}>
-                        <Users size={15} /> {group.name}
+                    <h1>{assessment.title}</h1>
+                    <p>{assessment.description || "Assessment inside group contest & practice library."}</p>
+                    <Link className="assessment-group-link" to={`/groups/${assessment.group_id}`}>
+                        <Users size={15} /> {group?.name ?? "View owning group"}
                     </Link>
                 </div>
-                <div className="assessment-hero-actions" aria-label="Thao tác đề thi">
+                <div className="assessment-hero-actions" aria-label="Assessment actions">
                     <button
                         className="icon-button"
                         type="button"
-                        aria-label={
-                            data.favoriteAssessmentIds.includes(exam.id)
-                                ? "Bỏ yêu thích"
-                                : "Lưu yêu thích"
-                        }
-                        aria-pressed={data.favoriteAssessmentIds.includes(exam.id)}
-                        title={
-                            data.favoriteAssessmentIds.includes(exam.id)
-                                ? "Bỏ yêu thích"
-                                : "Lưu yêu thích"
-                        }
-                        onClick={(): void => { void toggleFavorite(); }}
+                        aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
+                        aria-pressed={isFavorited}
+                        title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+                        onClick={(): void => {
+                            void toggleFavorite();
+                        }}
                     >
-                        <Heart
-                            size={18}
-                            fill={data.favoriteAssessmentIds.includes(exam.id) ? "currentColor" : "none"}
-                        />
+                        <Heart size={18} fill={isFavorited ? "currentColor" : "none"} />
                     </button>
-                    {canManage(group) && (
+                    {managerView && (
                         <>
                             <Link
                                 className="icon-button"
-                                aria-label="Chỉnh sửa đề"
-                                title="Chỉnh sửa đề"
-                                to={`/assessments/${exam.id}/edit`}
+                                aria-label="Edit assessment"
+                                title="Edit assessment"
+                                to={`/assessments/${assessment.id}/edit`}
                             >
                                 <Pencil size={17} />
                             </Link>
                             <button
                                 className="icon-button"
                                 type="button"
-                                aria-label="Xóa đề"
-                                title="Xóa đề"
-                                onClick={(): void => { void deleteAssessment(); }}
+                                aria-label="Delete assessment"
+                                title="Delete assessment"
+                                onClick={(): void => {
+                                    void handleDelete();
+                                }}
                             >
                                 <Trash2 size={17} />
                             </button>
@@ -131,23 +238,27 @@ export function AssessmentDetail(): ReactNode {
                     )}
                 </div>
             </header>
-            {error && <p className="error" role="alert">{error}</p>}
 
-            {!accessible ? (
+            {error && (
+                <p className="error" role="alert">
+                    {error}
+                </p>
+            )}
+
+            {contestOnlyLocked ? (
                 <section className="assessment-locked">
                     <span className="assessment-locked-icon">
                         <LockKeyhole size={22} />
                     </span>
                     <div>
-                        <p className="assessment-section-kicker">ĐỀ THUỘC NHÓM RIÊNG TƯ</p>
-                        <h2>Tham gia nhóm để làm bài</h2>
+                        <p className="assessment-section-kicker">CONTEST-SCOPED ASSESSMENT</p>
+                        <h2>Practice is not enabled for this assessment</h2>
                         <p>
-                            {group.pending
-                                ? `Yêu cầu tham gia nhóm ${group.name} đang chờ chủ nhóm phê duyệt.`
-                                : `Bạn cần tham gia nhóm ${group.name} để xem câu hỏi và làm bài.`}
+                            Assessments are reserved for scheduled contests inside their owning
+                            group unless practice mode is explicitly enabled by a group manager.
                         </p>
-                        <Link className="button primary" to={`/groups/${group.id}`}>
-                            {group.pending ? "Xem trạng thái yêu cầu" : "Xem và tham gia nhóm"}
+                        <Link className="button primary" to={`/groups/${assessment.group_id}`}>
+                            View group contests
                         </Link>
                     </div>
                 </section>
@@ -156,118 +267,151 @@ export function AssessmentDetail(): ReactNode {
                     <section className="assessment-section assessment-questions">
                         <div className="assessment-section-heading">
                             <div>
-                                <p className="assessment-section-kicker">NỘI DUNG ĐỀ THI</p>
-                                <h2>Câu hỏi</h2>
-                                <p>Khám phá nội dung của bộ đề này.</p>
+                                <p className="assessment-section-kicker">ASSESSMENT CONTENT</p>
+                                <h2>
+                                    {assessment.content_format === "PDF"
+                                        ? "PDF Document"
+                                        : "Questions"}
+                                </h2>
+                                <p>
+                                    Version {assessment.version} · {assessment.question_count}{" "}
+                                    questions
+                                </p>
                             </div>
                             <span className="assessment-count">
-                                {exam.questions.length} câu hỏi
+                                {assessment.total_points} total pts
                             </span>
                         </div>
-                        {exam.source === "PDF" ? (
+
+                        {content?.content_format === "PDF" ? (
                             <div className="assessment-placeholder">
                                 <FileText size={21} />
                                 <div>
-                                    <strong>Nội dung đề PDF</strong>
+                                    <strong>PDF exam file</strong>
                                     <p>
-                                        Tệp chưa được tải lên và chưa thể mở trong bản thử nghiệm.
+                                        Download or preview the attached PDF exam using the secure
+                                        temporary link.
                                     </p>
+                                    {content.pdf_url && (
+                                        <a
+                                            className="button primary"
+                                            href={content.pdf_url}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                        >
+                                            Open PDF exam
+                                        </a>
+                                    )}
                                 </div>
                             </div>
-                        ) : exam.questions.length ? (
+                        ) : content?.questions && content.questions.length > 0 ? (
                             <div className="assessment-question-list">
-                                {exam.questions.map(
-                                    (question: Question, index: number): ReactNode => (
+                                {content.questions.map(
+                                    (question: PublicQuestion, index: number): ReactNode => (
                                         <article className="assessment-question" key={question.id}>
                                             <span className="assessment-question-number">
                                                 {String(index + 1).padStart(2, "0")}
                                             </span>
                                             <div className="assessment-question-content">
                                                 <div className="assessment-question-meta">
-                                                    <span>CÂU {index + 1}</span>
-                                                    <span>{question.points} ĐIỂM</span>
+                                                    <span>QUESTION {question.order}</span>
+                                                    <span>{question.question_type}</span>
+                                                    <span>{question.points} PTS</span>
                                                 </div>
-                                                <h3>{question.text}</h3>
+                                                <h3>{question.prompt}</h3>
+                                                {question.options && question.options.length > 0 && (
+                                                    <ul className="assessment-option-preview">
+                                                        {question.options.map(
+                                                            (opt): ReactNode => (
+                                                                <li key={opt.key}>
+                                                                    <strong>{opt.key}.</strong>{" "}
+                                                                    {opt.text}
+                                                                </li>
+                                                            )
+                                                        )}
+                                                    </ul>
+                                                )}
                                             </div>
                                         </article>
-                                    ),
+                                    )
                                 )}
                             </div>
                         ) : (
                             <div className="assessment-placeholder">
                                 <BookOpen size={21} />
                                 <div>
-                                    <strong>Chưa có câu hỏi</strong>
-                                    <p>Câu hỏi sẽ xuất hiện ở đây khi đề được cập nhật.</p>
+                                    <strong>No questions found</strong>
+                                    <p>Questions will appear once authored for this version.</p>
                                 </div>
                             </div>
                         )}
                     </section>
+
                     <aside className="assessment-side">
                         <section className="assessment-section assessment-info">
                             <div className="assessment-section-heading">
                                 <div>
-                                    <p className="assessment-section-kicker">TỔNG QUAN</p>
-                                    <h2>Thông tin đề</h2>
+                                    <p className="assessment-section-kicker">OVERVIEW</p>
+                                    <h2>Metadata</h2>
                                 </div>
                             </div>
                             <dl className="assessment-info-list">
                                 <div>
-                                    <dt>Nhóm</dt>
-                                    <dd>{group.name}</dd>
+                                    <dt>Group</dt>
+                                    <dd>{group?.name ?? assessment.group_id}</dd>
                                 </div>
                                 <div>
-                                    <dt>Phạm vi</dt>
+                                    <dt>Format</dt>
+                                    <dd>{assessment.content_format}</dd>
+                                </div>
+                                <div>
+                                    <dt>Questions</dt>
+                                    <dd>{assessment.question_count}</dd>
+                                </div>
+                                <div>
+                                    <dt>Total points</dt>
+                                    <dd>{assessment.total_points}</dd>
+                                </div>
+                                <div>
+                                    <dt>Practice mode</dt>
                                     <dd>
-                                        {group.visibility === "PUBLIC" ? "Công khai" : "Riêng tư"}
+                                        {assessment.is_practice_enabled ? "Enabled" : "Contest only"}
                                     </dd>
                                 </div>
-                                <div>
-                                    <dt>Loại đề</dt>
-                                    <dd>{exam.source === "PDF" ? "PDF" : "Trực tuyến"}</dd>
-                                </div>
-                                <div>
-                                    <dt>Số câu hỏi</dt>
-                                    <dd>{exam.questions.length} câu</dd>
-                                </div>
-                                <div>
-                                    <dt>Tổng điểm</dt>
-                                    <dd>{totalPoints} điểm</dd>
-                                </div>
-                                <div>
-                                    <dt>Luyện tập</dt>
-                                    <dd>
-                                        {exam.source === "PDF"
-                                            ? "Chưa hỗ trợ"
-                                            : group.visibility === "PUBLIC" || exam.practice
-                                              ? "Được phép"
-                                              : "Chưa mở"}
-                                    </dd>
-                                </div>
+                                {answerKey && (
+                                    <div>
+                                        <dt>Answer key</dt>
+                                        <dd>{answerKey.answers.length} mapped</dd>
+                                    </div>
+                                )}
                             </dl>
                         </section>
+
                         <section className="assessment-section assessment-start">
                             <span className="assessment-start-icon">
                                 <GraduationCap size={21} />
                             </span>
-                            <h2>Sẵn sàng luyện tập?</h2>
+                            <h2>Practice mode</h2>
                             <p>
-                                {exam.source === "PDF"
-                                    ? "Đề PDF chưa hỗ trợ làm bài trong bản thử nghiệm."
-                                    : canPractice
-                                      ? "Bắt đầu làm bài theo tốc độ của bạn."
-                                      : "Chủ nhóm chưa mở chế độ luyện tập cho đề này."}
+                                {canPractice
+                                    ? "Start a self-paced practice submission against this assessment."
+                                    : assessment.content_format === "PDF"
+                                      ? "Interactive practice is available for structured digital assessments."
+                                      : "This assessment is scoped to scheduled group contests only."}
                             </p>
                             {canPractice && (
                                 <Link
                                     className="button primary assessment-practice-button"
-                                    to={`/assessments/${exam.id}/practice`}
+                                    to={`/assessments/${assessment.id}/practice`}
                                 >
-                                    <Play size={16} fill="currentColor" /> Bắt đầu luyện tập
+                                    <Play size={16} fill="currentColor" /> Start practice
                                 </Link>
                             )}
-                            <Link className="assessment-back-group" to={`/groups/${group.id}`}>
-                                Xem nhóm học tập
+                            <Link
+                                className="assessment-back-group"
+                                to={`/groups/${assessment.group_id}`}
+                            >
+                                Back to group
                             </Link>
                         </section>
                     </aside>

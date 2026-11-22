@@ -1,112 +1,231 @@
-import type { Dispatch,SetStateAction } from "react";
-import { useState,type ReactNode } from "react";
-import { Link,useParams } from "react-router-dom";
-import { hasAccess,PageTitle,useApp } from "../../../shared/context";
-import type { Assessment,Group,Question } from "../../../types";
+import {
+    useEffect,
+    useState,
+    type Dispatch,
+    type ReactNode,
+    type SetStateAction
+} from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { assessmentsApi, submissionsApi } from "../../../api/client";
+import type {
+    AssessmentContentResponse,
+    AssessmentMetadata,
+    PublicQuestion,
+    SubmissionRecord,
+    SubmittedAnswerInput
+} from "../../../api/types";
+import { extractErrorMessage } from "../../../data/http/httpClient";
+import { PageTitle } from "../../../shared/context";
 
 export function Practice(): ReactNode {
     const { assessmentId }: { assessmentId?: string } = useParams();
-    const { data }: ReturnType<typeof useApp> = useApp();
+    const navigate: ReturnType<typeof useNavigate> = useNavigate();
+
+    const [assessment, setAssessment]: [
+        AssessmentMetadata | null,
+        Dispatch<SetStateAction<AssessmentMetadata | null>>
+    ] = useState<AssessmentMetadata | null>(null);
+    const [content, setContent]: [
+        AssessmentContentResponse | null,
+        Dispatch<SetStateAction<AssessmentContentResponse | null>>
+    ] = useState<AssessmentContentResponse | null>(null);
     const [answers, setAnswers]: [
-        Record<string, string[]>,
-        Dispatch<SetStateAction<Record<string, string[]>>>,
-    ] = useState<Record<string, string[]>>({});
-    const [done, setDone]: [boolean, Dispatch<SetStateAction<boolean>>] = useState<boolean>(false);
-    const exam: Assessment | undefined = data.assessments.find(
-        (item: Assessment): boolean => item.id === assessmentId,
-    );
-    const group: Group | undefined = data.groups.find(
-        (item: Group): boolean => item.id === exam?.groupId,
-    );
-    if (
-        !exam ||
-        !group ||
-        !hasAccess(group) ||
-        (group.visibility !== "PUBLIC" && !exam.practice) ||
-        exam.source !== "DIRECT"
-    )
-        return <p className="empty">Đề không khả dụng để luyện tập.</p>;
+        Record<string, string | string[]>,
+        Dispatch<SetStateAction<Record<string, string | string[]>>>
+    ] = useState<Record<string, string | string[]>>({});
+    const [loading, setLoading]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(true);
+    const [submitting, setSubmitting]: [boolean, Dispatch<SetStateAction<boolean>>] =
+        useState<boolean>(false);
+    const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
+
+    useEffect((): void => {
+        if (!assessmentId) {
+            return;
+        }
+        setLoading(true);
+        setError("");
+        void Promise.all([
+            assessmentsApi.getById(assessmentId),
+            assessmentsApi.getContent(assessmentId)
+        ])
+            .then(([meta, doc]): void => {
+                setAssessment(meta);
+                setContent(doc);
+            })
+            .catch((reason: unknown): void => {
+                setError(extractErrorMessage(reason, "Unable to load practice assessment."));
+            })
+            .finally((): void => setLoading(false));
+    }, [assessmentId]);
+
+    async function handleSubmit(): Promise<void> {
+        if (!assessment || !content?.questions) {
+            return;
+        }
+        const formattedAnswers: SubmittedAnswerInput[] = content.questions.map(
+            (q: PublicQuestion): SubmittedAnswerInput => {
+                const raw: string | string[] | undefined = answers[q.id];
+                return {
+                    question_id: q.id,
+                    question_type: q.question_type,
+                    student_response:
+                        q.question_type === "MULTIPLE_CHOICE"
+                            ? Array.isArray(raw)
+                                ? raw
+                                : []
+                            : typeof raw === "string"
+                              ? raw
+                              : ""
+                };
+            }
+        );
+        setSubmitting(true);
+        setError("");
+        try {
+            const created: SubmissionRecord = await submissionsApi.create(
+                {
+                    submission_mode: "PRACTICE",
+                    trigger_type: "MANUAL",
+                    assessment_id: assessment.id,
+                    answers: formattedAnswers
+                },
+                crypto.randomUUID()
+            );
+            navigate(`/submissions/${created.id}`);
+        } catch (reason: unknown) {
+            setError(extractErrorMessage(reason, "Unable to submit practice answers."));
+            setSubmitting(false);
+        }
+    }
+
+    if (loading) {
+        return <p className="muted">Loading practice session...</p>;
+    }
+    if (!assessment || !assessment.is_practice_enabled || content?.content_format !== "JSON") {
+        return (
+            <div className="page-enter">
+                <Link className="back" to={assessment ? `/assessments/${assessment.id}` : "/groups"}>
+                    ← Back
+                </Link>
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
+                    </p>
+                )}
+                <p className="empty">This assessment is not enabled for digital practice.</p>
+            </div>
+        );
+    }
+
     return (
-        <>
-            <Link className="back" to={`/assessments/${exam.id}`}>
-                ← Chi tiết đề
+        <div className="page-enter">
+            <Link className="back" to={`/assessments/${assessment.id}`}>
+                ← Assessment details
             </Link>
             <PageTitle
-                label="LUYỆN TẬP"
-                title={exam.title}
-                description="Phiên thử nghiệm không nộp lên máy chủ và chưa chấm điểm."
+                label="PRACTICE MODE"
+                title={assessment.title}
+                description="Submit your answers to receive automated grading feedback."
             />
             <div className="form">
-                {exam.questions.map(
-                    (question: Question, index: number): ReactNode => (
+                {(content.questions ?? []).map(
+                    (question: PublicQuestion, index: number): ReactNode => (
                         <section className="panel" key={question.id}>
                             <p className="eyebrow">
-                                CÂU {index + 1} · {question.points} ĐIỂM
+                                QUESTION {index + 1} · {question.points} PTS ·{" "}
+                                {question.question_type}
                             </p>
-                            <h2>{question.text}</h2>
-                            {question.options.length ? (
+                            <h2>{question.prompt}</h2>
+                            {question.options && question.options.length > 0 ? (
                                 <div className="form">
-                                    {question.options.map(
-                                        (option: string, i: number): ReactNode => (
-                                            <label className="check option" key={i}>
+                                    {question.options.map((option): ReactNode => {
+                                        const currentVal: string | string[] | undefined =
+                                            answers[question.id];
+                                        const isChecked: boolean =
+                                            question.question_type === "MULTIPLE_CHOICE"
+                                                ? Array.isArray(currentVal) &&
+                                                  currentVal.includes(option.key)
+                                                : currentVal === option.key;
+                                        return (
+                                            <label className="check option" key={option.key}>
                                                 <input
                                                     type={
-                                                        question.kind === "MULTIPLE"
+                                                        question.question_type === "MULTIPLE_CHOICE"
                                                             ? "checkbox"
                                                             : "radio"
                                                     }
                                                     name={question.id}
-                                                    checked={(answers[question.id] ?? []).includes(
-                                                        option,
-                                                    )}
+                                                    checked={isChecked}
                                                     onChange={(event): void => {
-                                                        const previous: string[] =
-                                                            answers[question.id] ?? [];
+                                                        if (
+                                                            question.question_type ===
+                                                            "MULTIPLE_CHOICE"
+                                                        ) {
+                                                            const prev: string[] = Array.isArray(
+                                                                currentVal
+                                                            )
+                                                                ? currentVal
+                                                                : [];
+                                                            setAnswers({
+                                                                ...answers,
+                                                                [question.id]: event.target.checked
+                                                                    ? [...prev, option.key]
+                                                                    : prev.filter(
+                                                                          (k): boolean =>
+                                                                              k !== option.key
+                                                                      )
+                                                            });
+                                                            return;
+                                                        }
                                                         setAnswers({
                                                             ...answers,
-                                                            [question.id]:
-                                                                question.kind === "MULTIPLE"
-                                                                    ? event.target.checked
-                                                                        ? [...previous, option]
-                                                                        : previous.filter(
-                                                                              (
-                                                                                  value: string,
-                                                                              ): boolean =>
-                                                                                  value !== option,
-                                                                          )
-                                                                    : [option],
+                                                            [question.id]: option.key
                                                         });
                                                     }}
-                                                />
-                                                {option}
+                                                />{" "}
+                                                <span>
+                                                    <strong>{option.key}.</strong> {option.text}
+                                                </span>
                                             </label>
-                                        ),
-                                    )}
+                                        );
+                                    })}
                                 </div>
                             ) : (
                                 <textarea
-                                    rows={question.kind === "ESSAY" ? 5 : 2}
-                                    value={answers[question.id]?.[0] ?? ""}
+                                    rows={question.question_type === "ESSAY" ? 5 : 2}
+                                    value={
+                                        typeof answers[question.id] === "string"
+                                            ? (answers[question.id] as string)
+                                            : ""
+                                    }
                                     onChange={(event): void =>
                                         setAnswers({
                                             ...answers,
-                                            [question.id]: [event.target.value],
+                                            [question.id]: event.target.value
                                         })
                                     }
                                 />
                             )}
                         </section>
-                    ),
+                    )
                 )}
-                {done && (
-                    <p className="notice">
-                        Đã hoàn thành phiên luyện tập mô phỏng. Hệ thống chưa chấm điểm.
+                {error && (
+                    <p className="error" role="alert">
+                        {error}
                     </p>
                 )}
-                <button className="button primary" onClick={(): void => setDone(true)}>
-                    Hoàn thành luyện tập
+                <button
+                    className="button primary"
+                    type="button"
+                    disabled={submitting}
+                    onClick={(): void => {
+                        void handleSubmit();
+                    }}
+                >
+                    {submitting ? "Submitting..." : "Submit practice attempt"}
                 </button>
             </div>
-        </>
+        </div>
     );
 }
