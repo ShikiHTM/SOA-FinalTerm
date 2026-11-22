@@ -1,11 +1,33 @@
-import "dotenv/config";
-import { serve } from "@hono/node-server";
-import { app, db } from "./common";
-import "./routes";
-const port: number = Number(process.env.PORT ?? 5105);
-async function start(): Promise<void> {
-    await db.query("SELECT 1");
-    serve({ fetch: app.fetch, port });
-    console.log("group-service listening on " + port);
+import { serve, type ServerType } from "@hono/node-server";
+import { createApp } from "./app";
+import { closeDB, connectDB, getORM } from "./db/orm";
+import { loadEnvConfig, type EnvConfig } from "./shared/env";
+
+async function bootstrap(): Promise<void> {
+    const env: EnvConfig = loadEnvConfig();
+    await connectDB();
+    if (env.dbSyncSchema) {
+        await getORM().schema.update();
+    }
+
+    const app: ReturnType<typeof createApp> = createApp({ env });
+    const server: ServerType = serve({
+        fetch: app.fetch,
+        port: env.port
+    });
+
+    const shutdown: () => Promise<void> = async (): Promise<void> => {
+        server.close();
+        await closeDB();
+        process.exit(0);
+    };
+
+    process.on("SIGINT", (): void => {
+        void shutdown();
+    });
+    process.on("SIGTERM", (): void => {
+        void shutdown();
+    });
 }
-start().catch((error: unknown) => { console.error(error); process.exit(1); });
+
+void bootstrap();

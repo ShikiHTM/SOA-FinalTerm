@@ -1,0 +1,1266 @@
+openapi: 3.0.3
+info:
+  title: User Service API Contract
+  version: 1.0.0
+  description: API for user authentication, session verification, user profiles, social follow relationships, and account administration.
+
+servers:
+  - url: http://localhost:3031
+    description: Local Dev Server
+  - url: http://user_service:3031
+    description: Docker Compose Internal Network
+
+tags:
+  - name: Auth
+    description: User login, registration, OAuth2 authentication, and logout.
+  - name: Users
+    description: Own profile management, public profile lookup, user follow relationships, and batch summary lookup.
+  - name: Admin
+    description: Administrator user search, moderation, and system role management.
+  - name: Service
+    description: Internal token verification for other services.
+  - name: Observability
+    description: Service health status.
+
+components:
+  parameters:
+    XInternalSecret:
+      in: header
+      name: X-Internal-Secret
+      required: true
+      schema:
+        type: string
+      description: Shared secret for internal service authentication.
+
+    XUserId:
+      in: header
+      name: X-User-Id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Authenticated user ID.
+
+    XUserRole:
+      in: header
+      name: X-User-Role
+      required: true
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Authenticated user role.
+
+    OptionalXUserId:
+      in: header
+      name: X-User-Id
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Optional authenticated viewer user ID.
+
+    OptionalXUserRole:
+      in: header
+      name: X-User-Role
+      required: false
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Optional authenticated viewer role.
+
+    AuthorizationBearer:
+      in: header
+      name: Authorization
+      required: true
+      schema:
+        type: string
+      example: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+      description: Bearer access token.
+
+    UserIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target user UUID.
+
+    UsernameParam:
+      in: path
+      name: username
+      required: true
+      schema:
+        type: string
+        minLength: 3
+        maxLength: 64
+        pattern: '^[a-zA-Z0-9_.-]+$'
+      description: Target username.
+
+    PageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: 1-based page number.
+
+    LimitQuery:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Maximum number of items per page.
+
+  schemas:
+    UserSystemRole:
+      type: string
+      enum: [USER, ADMIN]
+      description: System role of the user.
+
+    UserStatus:
+      type: string
+      enum: [ACTIVE, SUSPENDED, BANNED]
+      description: Account status.
+
+    OAuthProvider:
+      type: string
+      enum: [GOOGLE, GITHUB]
+      description: Supported OAuth2 identity provider.
+
+    LoginRequest:
+      type: object
+      required:
+        - identifier
+        - password
+      properties:
+        identifier:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: alice_soa
+          description: User email or username.
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 128
+          example: Password123
+
+    RegisterRequest:
+      type: object
+      required:
+        - email
+        - username
+        - password
+        - display_name
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          example: alice@example.com
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_.-]+$'
+          example: alice_soa
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          example: Password123
+          description: At least 8 characters with uppercase, lowercase, and a digit.
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+          example: Alice SOA
+
+    OAuthLoginRequest:
+      type: object
+      required:
+        - provider
+        - code
+        - redirect_uri
+      properties:
+        provider:
+          $ref: '#/components/schemas/OAuthProvider'
+        code:
+          type: string
+          minLength: 1
+          example: 4/0AeanS0...
+          description: OAuth2 authorization code from the provider callback.
+        redirect_uri:
+          type: string
+          format: uri
+          example: http://localhost:3000/auth/google/callback
+          description: Redirect URI used in the OAuth2 authorization request.
+
+    VerifyTokenRequest:
+      type: object
+      required:
+        - token
+      properties:
+        token:
+          type: string
+          minLength: 1
+          example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+          description: Access token to verify.
+
+    AuthUserSummary:
+      type: object
+      required:
+        - id
+        - email
+        - username
+        - display_name
+        - avatar_url
+        - system_role
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        system_role:
+          $ref: '#/components/schemas/UserSystemRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+
+    AuthResponse:
+      type: object
+      required:
+        - token
+        - token_type
+        - expires_at
+        - user
+      properties:
+        token:
+          type: string
+          description: Session access token.
+        token_type:
+          type: string
+          enum: [Bearer]
+        expires_at:
+          type: string
+          format: date-time
+        user:
+          $ref: '#/components/schemas/AuthUserSummary'
+
+    VerifiedTokenResponse:
+      type: object
+      required:
+        - valid
+        - user_id
+        - user_role
+        - status
+      properties:
+        valid:
+          type: boolean
+          example: true
+        user_id:
+          type: string
+          format: uuid
+        user_role:
+          $ref: '#/components/schemas/UserSystemRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+
+    PrivacySettings:
+      type: object
+      required:
+        - show_email
+        - show_bio
+        - show_followers
+        - show_following
+      properties:
+        show_email:
+          type: boolean
+        show_bio:
+          type: boolean
+        show_followers:
+          type: boolean
+        show_following:
+          type: boolean
+
+    PrivacySettingsPatch:
+      type: object
+      properties:
+        show_email:
+          type: boolean
+        show_bio:
+          type: boolean
+        show_followers:
+          type: boolean
+        show_following:
+          type: boolean
+
+    OwnUserProfile:
+      allOf:
+        - $ref: '#/components/schemas/AuthUserSummary'
+        - type: object
+          required:
+            - bio
+            - privacy_settings
+            - has_password
+            - linked_providers
+            - followers_count
+            - following_count
+            - created_at
+            - updated_at
+          properties:
+            bio:
+              type: string
+              nullable: true
+            privacy_settings:
+              $ref: '#/components/schemas/PrivacySettings'
+            has_password:
+              type: boolean
+            linked_providers:
+              type: array
+              items:
+                $ref: '#/components/schemas/OAuthProvider'
+            followers_count:
+              type: integer
+              minimum: 0
+            following_count:
+              type: integer
+              minimum: 0
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    PublicUserProfile:
+      type: object
+      required:
+        - id
+        - username
+        - display_name
+        - avatar_url
+        - bio
+        - email
+        - status
+        - restricted
+        - followers_count
+        - following_count
+        - is_following
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        bio:
+          type: string
+          nullable: true
+        email:
+          type: string
+          format: email
+          nullable: true
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        restricted:
+          type: boolean
+        followers_count:
+          type: integer
+          minimum: 0
+          nullable: true
+        following_count:
+          type: integer
+          minimum: 0
+          nullable: true
+        is_following:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      minProperties: 1
+      properties:
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        username:
+          type: string
+          minLength: 3
+          maxLength: 64
+          pattern: '^[a-zA-Z0-9_.-]+$'
+        bio:
+          type: string
+          maxLength: 500
+          nullable: true
+        avatar_url:
+          type: string
+          format: uri
+          maxLength: 2048
+          nullable: true
+        privacy_settings:
+          $ref: '#/components/schemas/PrivacySettingsPatch'
+
+    ChangePasswordRequest:
+      type: object
+      required:
+        - current_password
+        - new_password
+      properties:
+        current_password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 128
+        new_password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: At least 8 characters with uppercase, lowercase, and a digit.
+
+    FollowActionResponse:
+      type: object
+      required:
+        - following
+        - followers_count
+      properties:
+        following:
+          type: boolean
+        followers_count:
+          type: integer
+          minimum: 0
+
+    UserFollowItem:
+      type: object
+      required:
+        - id
+        - username
+        - display_name
+        - avatar_url
+        - followed_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        followed_at:
+          type: string
+          format: date-time
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - limit
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+
+    PaginatedFollowList:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserFollowItem'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AdminUserRecord:
+      allOf:
+        - $ref: '#/components/schemas/AuthUserSummary'
+        - type: object
+          required:
+            - bio
+            - moderation_reason
+            - moderated_by
+            - moderated_at
+            - created_at
+            - updated_at
+          properties:
+            bio:
+              type: string
+              nullable: true
+            moderation_reason:
+              type: string
+              nullable: true
+            moderated_by:
+              type: string
+              format: uuid
+              nullable: true
+            moderated_at:
+              type: string
+              format: date-time
+              nullable: true
+            created_at:
+              type: string
+              format: date-time
+            updated_at:
+              type: string
+              format: date-time
+
+    PaginatedAdminUsers:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminUserRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    UpdateUserStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Required when status is SUSPENDED or BANNED.
+
+    UpdateUserRoleRequest:
+      type: object
+      required:
+        - system_role
+      properties:
+        system_role:
+          $ref: '#/components/schemas/UserSystemRole'
+
+    BatchUsersRequest:
+      type: object
+      required:
+        - user_ids
+      properties:
+        user_ids:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: string
+            format: uuid
+
+    InternalUserSummary:
+      type: object
+      required:
+        - id
+        - username
+        - display_name
+        - avatar_url
+        - system_role
+        - status
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        display_name:
+          type: string
+        avatar_url:
+          type: string
+          format: uri
+          nullable: true
+        system_role:
+          $ref: '#/components/schemas/UserSystemRole'
+        status:
+          $ref: '#/components/schemas/UserStatus'
+
+    BatchUsersResponse:
+      type: object
+      required:
+        - users
+      properties:
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/InternalUserSummary'
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - service
+      properties:
+        status:
+          type: string
+          example: ok
+        service:
+          type: string
+          example: user-service
+
+    ErrorResponse:
+      $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+
+  responses:
+    Conflict:
+      description: '409 Conflict - Email or username already exists.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadGateway:
+      description: '502 Bad Gateway - OAuth2 provider request failed.'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+paths:
+  /health:
+    get:
+      tags:
+        - Observability
+      summary: Check service health
+      description: Returns service health status.
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/internal/auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Log in
+      description: Authenticates a user with email or username and password and returns a Bearer token.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authenticated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/auth/register:
+    post:
+      tags:
+        - Auth
+      summary: Register account
+      description: Creates a new user account with email, username, password, and display name and returns a Bearer token.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User account created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/auth/oauth:
+    post:
+      tags:
+        - Auth
+      summary: Authenticate with OAuth2
+      description: Exchanges an OAuth2 authorization code for a provider account and returns a Bearer token.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OAuthLoginRequest'
+      responses:
+        '200':
+          description: Authenticated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/auth/logout:
+    post:
+      tags:
+        - Auth
+      summary: Log out
+      description: Revokes the active Bearer token for the authenticated user.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/AuthorizationBearer'
+      responses:
+        '204':
+          description: Logged out successfully.
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/auth/verify:
+    post:
+      tags:
+        - Service
+      summary: Verify session token
+      description: Validates a Bearer token and returns the associated user ID, role, and account status.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyTokenRequest'
+      responses:
+        '200':
+          description: Token is valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerifiedTokenResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/me:
+    get:
+      tags:
+        - Users
+      summary: Get own profile
+      description: Returns the authenticated user's full profile, privacy preferences, linked OAuth2 providers, and follow counts.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      responses:
+        '200':
+          description: Own profile retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnUserProfile'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    patch:
+      tags:
+        - Users
+      summary: Update own profile
+      description: Updates the authenticated user's profile fields or privacy settings and returns the updated profile.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnUserProfile'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/me/password:
+    put:
+      tags:
+        - Users
+      summary: Change password
+      description: Verifies the current password and updates it to a new password for the authenticated user.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChangePasswordRequest'
+      responses:
+        '204':
+          description: Password updated successfully.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/batch:
+    post:
+      tags:
+        - Service
+      summary: Batch lookup users
+      description: Returns public account summaries for a list of user IDs.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchUsersRequest'
+      responses:
+        '200':
+          description: User summaries retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUsersResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/username/{username}:
+    get:
+      tags:
+        - Users
+      summary: Get user profile by username
+      description: Returns a user's public profile by username, applying their privacy settings and restriction state.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/UsernameParam'
+      responses:
+        '200':
+          description: Public profile retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUserProfile'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/{id}:
+    get:
+      tags:
+        - Users
+      summary: Get user profile by ID
+      description: Returns a user's public profile by user ID, applying their privacy settings and restriction state.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Public profile retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicUserProfile'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/{id}/follow:
+    post:
+      tags:
+        - Users
+      summary: Follow user
+      description: Follows the target user on behalf of the authenticated user and returns the updated follow state and follower count.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Follow state updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowActionResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Users
+      summary: Unfollow user
+      description: Removes the follow relationship with the target user and returns the updated follow state and follower count.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: Follow relationship removed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FollowActionResponse'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/{id}/followers:
+    get:
+      tags:
+        - Users
+      summary: List user followers
+      description: Returns a paginated list of users following the target user when permitted by privacy settings.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Paginated followers list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFollowList'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/users/{id}/following:
+    get:
+      tags:
+        - Users
+      summary: List followed users
+      description: Returns a paginated list of users followed by the target user when permitted by privacy settings.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Paginated following list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedFollowList'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/users:
+    get:
+      tags:
+        - Admin
+      summary: List user accounts
+      description: Returns a paginated, searchable, and filterable list of user accounts for administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+          description: Case-insensitive search text matched against email, username, or display name.
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/UserStatus'
+          description: Optional account status filter.
+        - in: query
+          name: role
+          required: false
+          schema:
+            $ref: '#/components/schemas/UserSystemRole'
+          description: Optional system role filter.
+      responses:
+        '200':
+          description: Paginated user list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminUsers'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/users/{id}:
+    get:
+      tags:
+        - Admin
+      summary: Get user account details
+      description: Returns full user account and moderation details for administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+      responses:
+        '200':
+          description: User account details retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/users/{id}/status:
+    patch:
+      tags:
+        - Admin
+      summary: Update user account status
+      description: Suspends, bans, or reactivates a target user account and revokes active sessions when restricted.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
+      responses:
+        '200':
+          description: User account status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/users/{id}/role:
+    patch:
+      tags:
+        - Admin
+      summary: Update user system role
+      description: Grants or revokes administrator privileges for a target user account and invalidates their active sessions.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/UserIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRoleRequest'
+      responses:
+        '200':
+          description: User system role updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUserRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
