@@ -13,7 +13,7 @@ import type { Dispatch,SetStateAction } from "react";
 import { useState,type ReactNode } from "react";
 import { Link,useParams } from "react-router-dom";
 import { canManage,date,hasAccess,useApp } from "../../../shared/context";
-import type { Assessment,Contest,Group,JoinRequest } from "../../../types";
+import type { Assessment,Contest,Group,GroupMember,JoinRequest } from "../../../types";
 import { hasGroupPermission } from "../../../authorization/permissions";
 
 export function GroupDetail(): ReactNode {
@@ -66,6 +66,9 @@ export function GroupDetail(): ReactNode {
     }
     const requests: JoinRequest[] = data.joinRequests.filter(
         (request: JoinRequest): boolean => request.groupId === group.id,
+    );
+    const members: GroupMember[] = data.groupMembers.filter(
+        (member: GroupMember): boolean => member.groupId === group.id,
     );
     const exams: Assessment[] = data.assessments.filter(
         (item: Assessment): boolean => item.groupId === group.id,
@@ -381,6 +384,41 @@ export function GroupDetail(): ReactNode {
                             </p>
                         )}
                     </section>
+                    {hasAccess(group) && (
+                        <section className="group-section">
+                            <div className="group-section-heading">
+                                <div>
+                                    <p className="group-section-kicker">CỘNG ĐỒNG</p>
+                                    <h2>Thành viên</h2>
+                                </div>
+                                <span className="group-section-count">{members.length} người</span>
+                            </div>
+                            {members.length ? (
+                                <div className="group-request-list">
+                                    {members.map((member: GroupMember): ReactNode => (
+                                        <Link
+                                            className="group-request-person"
+                                            key={member.userEmail}
+                                            to={`/users/${encodeURIComponent(member.userEmail)}`}
+                                        >
+                                            <span className="group-person-avatar">
+                                                {member.userEmail.charAt(0).toUpperCase()}
+                                            </span>
+                                            <span>
+                                                <strong>{member.userEmail}</strong>
+                                                <small>{member.role === "OWNER" ? "Chủ nhóm" : member.role === "MODERATOR" ? "Điều hành viên" : "Thành viên"}</small>
+                                            </span>
+                                        </Link>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="group-request-empty">
+                                    <Users size={20} />
+                                    <p>Chưa có thành viên để hiển thị.</p>
+                                </div>
+                            )}
+                        </section>
+                    )}
                     {hasGroupPermission(group.role, "MANAGE_MEMBERS") && group.joinPolicy === "APPROVAL" && (
                         <section className="group-section group-requests">
                             <div className="group-section-heading">

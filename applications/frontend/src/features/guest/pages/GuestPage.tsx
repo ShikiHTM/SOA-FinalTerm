@@ -11,6 +11,7 @@ import {
 import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Link, useParams } from "react-router-dom";
 import { getServices } from "../../../data/services";
+import type { Account } from "../../../data/contracts/services";
 import type { Assessment, Contest, Group, Snapshot } from "../../../types";
 
 type GuestPageProps = {
@@ -19,13 +20,24 @@ type GuestPageProps = {
 
 export function GuestPage({ themeControl }: GuestPageProps): ReactNode {
     const { groupId, contestId }: { groupId?: string; contestId?: string } = useParams();
+    const [activeSection, setActiveSection]: ["learning" | "users", Dispatch<SetStateAction<"learning" | "users">>] =
+        useState<"learning" | "users">("learning");
     const [data, setData]: [Snapshot | null, Dispatch<SetStateAction<Snapshot | null>>] =
         useState<Snapshot | null>(null);
+    const [users, setUsers]: [Account[], Dispatch<SetStateAction<Account[]>>] =
+        useState<Account[]>([]);
     const [error, setError]: [string, Dispatch<SetStateAction<string>>] = useState<string>("");
 
     useEffect((): void => {
         // TODO: Lấy nhóm và kỳ thi được phép công khai qua Gateway theo quyền Guest.
-        void getServices().createDataSource("").read().then(setData).catch((reason: unknown): void => {
+        const services: ReturnType<typeof getServices> = getServices();
+        void Promise.all([
+            services.createDataSource("").read(),
+            services.accounts.list(),
+        ]).then(([snapshot, accounts]: [Snapshot, Account[]]): void => {
+            setData(snapshot);
+            setUsers(accounts.filter((account: Account): boolean => account.status === "ACTIVE"));
+        }).catch((reason: unknown): void => {
             setError(reason instanceof Error ? reason.message : "Không thể tải dữ liệu.");
         });
     }, []);
@@ -166,6 +178,32 @@ export function GuestPage({ themeControl }: GuestPageProps): ReactNode {
                                 </div>
                             </div>
                         </section>
+                        <div className="tabs guest-discover-tabs" role="tablist" aria-label="Khám phá">
+                            <button
+                                className={activeSection === "learning" ? "active" : ""}
+                                id="guest-learning-tab"
+                                type="button"
+                                role="tab"
+                                aria-selected={activeSection === "learning"}
+                                aria-controls="guest-learning-panel"
+                                onClick={(): void => setActiveSection("learning")}
+                            >
+                                Đề thi &amp; kỳ thi
+                            </button>
+                            <button
+                                className={activeSection === "users" ? "active" : ""}
+                                id="guest-users-tab"
+                                type="button"
+                                role="tab"
+                                aria-selected={activeSection === "users"}
+                                aria-controls="guest-users-panel"
+                                onClick={(): void => setActiveSection("users")}
+                            >
+                                Người dùng
+                            </button>
+                        </div>
+                        {activeSection === "learning" ? (
+                            <div id="guest-learning-panel" role="tabpanel" aria-labelledby="guest-learning-tab">
                         <section className="discover-section guest-section" aria-labelledby="guest-groups-title">
                             <div className="discover-heading">
                                 <div>
@@ -247,6 +285,43 @@ export function GuestPage({ themeControl }: GuestPageProps): ReactNode {
                                 </div>
                             )}
                         </section>
+                            </div>
+                        ) : (
+                        <section id="guest-users-panel" className="discover-section guest-section" role="tabpanel" aria-labelledby="guest-users-tab">
+                            <div className="discover-heading">
+                                <div>
+                                    <p className="eyebrow">CỘNG ĐỒNG LMS</p>
+                                    <h2 id="guest-users-title">Khám phá người dùng</h2>
+                                    <p>Xem hồ sơ công khai của các thành viên trên hệ thống.</p>
+                                </div>
+                                <span className="result-count">{users.length} người dùng</span>
+                            </div>
+                            {users.length ? (
+                                <ul className="admin-list">
+                                    {users.map((account: Account): ReactNode => (
+                                        <li className="admin-row" key={account.email}>
+                                            <span className="admin-row-icon"><Users size={18} /></span>
+                                            <span className="admin-row-copy">
+                                                <strong>{account.displayName}</strong>
+                                                <small>{account.bio || "Chưa có giới thiệu."}</small>
+                                            </span>
+                                            <Link
+                                                className="button"
+                                                to={`/users/${encodeURIComponent(account.email)}`}
+                                            >
+                                                Xem hồ sơ <ArrowRight size={14} />
+                                            </Link>
+                                        </li>
+                                    ))}
+                                </ul>
+                            ) : (
+                                <div className="empty dashboard-empty">
+                                    <Users size={23} />
+                                    <h3>Chưa có hồ sơ công khai</h3>
+                                </div>
+                            )}
+                        </section>
+                        )}
                     </div>
                 )}
             </main>

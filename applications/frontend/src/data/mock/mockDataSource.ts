@@ -1,6 +1,6 @@
 import { MOCK_MODERATOR_EMAIL, MOCK_OWNER_EMAIL, MOCK_RBAC_EMAIL } from "./constants";
 import { getPreviewRole, isMockSystemAdmin, PREVIEW_DATA_KEY, PREVIEW_GROUP_ID } from "./rolePreview";
-import { canManageMember, hasGroupPermission, hasSystemPermission, type GroupPermission, type SystemRole } from "../../authorization/permissions";
+import { canManageMember, canViewGroupContent, hasGroupPermission, hasSystemPermission, type GroupPermission, type SystemRole } from "../../authorization/permissions";
 import type { MockStore, RecipientNotice } from "./mockTypes";
 import { seed } from "./seed";
 import type { AttemptStatus, DataSource } from "../contracts/dataSource";
@@ -159,7 +159,12 @@ export function createMockDataSource(email: string): DataSource {
             groupMembers: Object.entries(store.memberships).flatMap(
                 ([userEmail, memberships]: [string, Record<string, GroupRole>]): GroupMember[] =>
                     Object.entries(memberships)
-                        .filter(([groupId]: [string, GroupRole]): boolean => canGroup(store, groupId, "MANAGE_MEMBERS"))
+                        .filter(([groupId]: [string, GroupRole]): boolean => {
+                            const group: Group | undefined = store.groups.find(
+                                (item: Group): boolean => item.id === groupId,
+                            );
+                            return !!group && canViewGroupContent(group.visibility, groupRole(store, groupId));
+                        })
                         .map(([groupId, role]: [string, GroupRole]): GroupMember => ({ groupId, userEmail, role })),
             ),
             joinRequests: Object.entries(store.pending).flatMap(

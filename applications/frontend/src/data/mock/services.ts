@@ -3,6 +3,7 @@ import { hasSystemPermission, type SystemRole } from "../../authorization/permis
 import {
     activeAccount,
     authenticateAccount,
+    changePassword,
     readAccounts,
     registerAccount,
     setAccountStatus,
@@ -37,6 +38,7 @@ export function createMockServices(): AppServices {
             register: registerAccount,
             authenticate: authenticateAccount,
             isActive: activeAccount,
+            changePassword,
             updateProfile,
             toggleFollow,
             setStatus: setAccountStatus,

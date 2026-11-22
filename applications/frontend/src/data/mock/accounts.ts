@@ -71,6 +71,26 @@ export async function activeAccount(email: string): Promise<boolean> {
     return (await readAccounts()).some((account: MockAccount): boolean => account.email === email && account.status === "ACTIVE");
 }
 
+export async function changePassword(
+    email: string,
+    currentPassword: string,
+    newPassword: string,
+): Promise<void> {
+    if (newPassword.length < 6) throw new Error("Mật khẩu mới phải có ít nhất 6 ký tự.");
+    if (currentPassword === newPassword) throw new Error("Mật khẩu mới phải khác mật khẩu hiện tại.");
+
+    const accounts: MockAccount[] = await readAccounts();
+    const account: MockAccount | undefined = accounts.find(
+        (item: MockAccount): boolean => item.email === email && item.status === "ACTIVE",
+    );
+    if (!account || account.passwordHash !== await hashPassword(currentPassword)) {
+        throw new Error("Mật khẩu hiện tại chưa đúng.");
+    }
+
+    account.passwordHash = await hashPassword(newPassword);
+    saveAccounts(accounts);
+}
+
 export async function updateProfile(email: string, displayName: string, bio: string): Promise<void> {
     const accounts: MockAccount[] = await readAccounts();
     const account: MockAccount | undefined = accounts.find((item: MockAccount): boolean => item.email === email && item.status === "ACTIVE");

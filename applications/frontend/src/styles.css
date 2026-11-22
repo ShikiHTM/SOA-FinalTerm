@@ -3576,6 +3576,10 @@ textarea:focus-visible {
 .guest-section {
     margin-top: 44px;
 }
+.guest-discover-tabs {
+    margin-top: 34px;
+    border-bottom: 1px solid var(--theme-border);
+}
 .guest-card {
     min-height: 220px;
 }
@@ -3583,6 +3587,185 @@ textarea:focus-visible {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+}
+.profile-page {
+    max-width: 1120px;
+    min-height: 100vh;
+    padding-top: 34px;
+}
+.profile-page-heading {
+    margin: 0 0 26px;
+}
+.profile-page-heading .back-link {
+    margin-bottom: 24px;
+}
+.profile-page-heading .eyebrow,
+.profile-section > .eyebrow,
+.profile-identity .eyebrow {
+    margin-bottom: 8px;
+}
+.profile-page-heading h1 {
+    margin: 0 0 8px;
+}
+.profile-page-heading > p:last-child {
+    margin: 0;
+}
+.profile-feedback {
+    margin: 0 0 16px;
+    padding: 12px 16px;
+    border-radius: 10px;
+}
+.profile-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 22px;
+    padding: 30px;
+}
+.profile-avatar {
+    display: grid;
+    flex: 0 0 44px;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    color: var(--theme-text);
+    background: var(--theme-raised);
+    border: 1px solid var(--theme-border);
+    border-radius: 14px;
+    font-size: 17px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.profile-avatar-large {
+    width: 82px;
+    height: 82px;
+    border-radius: 24px;
+    font-size: 30px;
+}
+.profile-identity h2 {
+    margin: 0 0 4px;
+    font-size: clamp(24px, 3vw, 32px);
+}
+.profile-email,
+.profile-bio {
+    margin: 0;
+    color: var(--theme-muted);
+}
+.profile-bio {
+    margin-top: 12px;
+}
+.profile-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.profile-actions .icon-button {
+    width: 44px;
+    height: 44px;
+    border-radius: 13px;
+}
+.profile-sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    gap: 18px;
+    margin-top: 18px;
+}
+.profile-section h2 {
+    margin: 0 0 18px;
+}
+.profile-section .form {
+    gap: 16px;
+}
+.profile-following {
+    grid-column: 1 / -1;
+}
+.profile-section-heading,
+.profile-directory-row,
+.profile-directory-person {
+    display: flex;
+    align-items: center;
+}
+.profile-section-heading,
+.profile-directory-row {
+    justify-content: space-between;
+    gap: 14px;
+}
+.profile-section-heading h2 {
+    margin-bottom: 0;
+}
+.profile-directory {
+    padding: 8px 24px;
+}
+.profile-directory-row {
+    min-height: 76px;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--theme-border);
+}
+.profile-directory-row:last-child {
+    border-bottom: 0;
+}
+.profile-directory-person {
+    min-width: 0;
+    gap: 13px;
+    color: var(--theme-text);
+    text-decoration: none;
+}
+.profile-directory-person > span:last-child {
+    display: grid;
+    gap: 4px;
+}
+.profile-directory-person small {
+    overflow: hidden;
+    max-width: 60ch;
+    color: var(--theme-muted);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.profile-directory-person:hover strong {
+    text-decoration: underline;
+}
+.profile-directory-list {
+    margin-top: 16px;
+}
+.profile-empty {
+    margin: 18px 0;
+    color: var(--theme-muted);
+}
+.profile-empty-state {
+    padding: 34px;
+}
+.profile-empty-state p {
+    color: var(--theme-muted);
+}
+@media (max-width: 700px) {
+    .profile-page {
+        padding: 22px 18px 48px;
+    }
+    .profile-card {
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 16px;
+        padding: 22px;
+    }
+    .profile-avatar-large {
+        width: 64px;
+        height: 64px;
+        border-radius: 18px;
+        font-size: 24px;
+    }
+    .profile-actions {
+        grid-column: 1 / -1;
+        justify-content: flex-end;
+    }
+    .profile-sections {
+        grid-template-columns: 1fr;
+    }
+    .profile-following {
+        grid-column: auto;
+    }
+    .profile-directory {
+        padding: 8px 16px;
+    }
 }
 .guest-back {
     display: inline-flex;

@@ -14,6 +14,7 @@ export interface AccountService {
     register(email: string, password: string): Promise<void>;
     authenticate(email: string, password: string): Promise<string>;
     isActive(email: string): Promise<boolean>;
+    changePassword(email: string, currentPassword: string, newPassword: string): Promise<void>;
     updateProfile(email: string, displayName: string, bio: string): Promise<void>;
     toggleFollow(email: string, target: string): Promise<void>;
     setStatus(actor: string, target: string, status: Account["status"]): Promise<void>;
