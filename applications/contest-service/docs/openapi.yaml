@@ -1,0 +1,932 @@
+openapi: 3.0.3
+info:
+  title: Contest Service API Contract
+  version: 2.0.0
+  description: API for creating, browsing, participating in, moderating, and evaluating eligibility for scheduled contests.
+
+servers:
+  - url: http://localhost:8004
+    description: Local Dev Server
+  - url: http://contest_service:8004
+    description: Docker Compose Internal Network
+
+tags:
+  - name: Contests
+    description: Contest authoring, scheduling, discovery, participation checks, and cancellation.
+  - name: Admin
+    description: Platform administrator contest search and moderation.
+  - name: Service
+    description: Internal contest context endpoints for sibling services.
+  - name: Observability
+    description: Service health status.
+
+components:
+  parameters:
+    XInternalSecret:
+      in: header
+      name: X-Internal-Secret
+      required: true
+      schema:
+        type: string
+      description: Shared secret for internal service authentication.
+
+    XUserId:
+      in: header
+      name: X-User-Id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Authenticated user ID.
+
+    XUserRole:
+      in: header
+      name: X-User-Role
+      required: true
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Authenticated user role.
+
+    OptionalXUserId:
+      in: header
+      name: X-User-Id
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: Optional authenticated user ID. Must be paired with X-User-Role when provided.
+
+    OptionalXUserRole:
+      in: header
+      name: X-User-Role
+      required: false
+      schema:
+        $ref: '#/components/schemas/UserSystemRole'
+      description: Optional authenticated user role. Must be paired with X-User-Id when provided.
+
+    ContestIdParam:
+      in: path
+      name: id
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: Target contest UUID.
+
+    PageQuery:
+      in: query
+      name: page
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+      description: 1-based page number.
+
+    LimitQuery:
+      in: query
+      name: limit
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+      description: Maximum number of items per page.
+
+  responses:
+    Conflict:
+      description: Request conflicts with the current contest state.
+      content:
+        application/json:
+          schema:
+            $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+
+    BadGateway:
+      description: Upstream dependency service unavailable or returned an unexpected error.
+      content:
+        application/json:
+          schema:
+            $ref: '../../../packages/docs/common/errors.yaml#/components/schemas/ErrorResponse'
+
+  schemas:
+    UserSystemRole:
+      type: string
+      enum: [USER, ADMIN]
+      description: System role of a user.
+
+    ContestVisibility:
+      type: string
+      enum: [PUBLIC, PRIVATE]
+      description: Audience visibility scope for the contest.
+
+    ContestSubmissionPolicy:
+      type: string
+      enum: [SINGLE, MULTIPLE]
+      description: Allowed submission attempts per participant.
+
+    ContestStatus:
+      type: string
+      enum: [DRAFT, PUBLISHED, CANCELLED]
+      description: Lifecycle publication status of the contest.
+
+    ContestPhase:
+      type: string
+      enum: [DRAFT, UPCOMING, ONGOING, ENDED, CANCELLED]
+      description: Derived runtime schedule phase of the contest.
+
+    EvaluationRule:
+      type: string
+      enum: [SINGLE_ATTEMPT, FINAL_ATTEMPT_ONLY]
+      description: Grading evaluation rule derived from the submission policy.
+
+    PaginationMeta:
+      type: object
+      required:
+        - page
+        - limit
+        - total
+        - total_pages
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        total_pages:
+          type: integer
+          minimum: 0
+
+    ContestSummary:
+      type: object
+      required:
+        - id
+        - group_id
+        - assessment_id
+        - assessment_version
+        - organizer_id
+        - title
+        - description
+        - visibility
+        - start_time
+        - end_time
+        - submission_policy
+        - status
+        - phase
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        assessment_id:
+          type: string
+          format: uuid
+        assessment_version:
+          type: integer
+          minimum: 1
+        organizer_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+        visibility:
+          $ref: '#/components/schemas/ContestVisibility'
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        submission_policy:
+          $ref: '#/components/schemas/ContestSubmissionPolicy'
+        status:
+          $ref: '#/components/schemas/ContestStatus'
+        phase:
+          $ref: '#/components/schemas/ContestPhase'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PaginatedContestList:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContestSummary'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    AdminContestRecord:
+      allOf:
+        - $ref: '#/components/schemas/ContestSummary'
+        - type: object
+          required:
+            - moderation_reason
+            - moderated_by
+            - moderated_at
+          properties:
+            moderation_reason:
+              type: string
+              nullable: true
+            moderated_by:
+              type: string
+              format: uuid
+              nullable: true
+            moderated_at:
+              type: string
+              format: date-time
+              nullable: true
+
+    PaginatedAdminContests:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminContestRecord'
+        pagination:
+          $ref: '#/components/schemas/PaginationMeta'
+
+    ContestParticipationInfo:
+      type: object
+      required:
+        - contest_id
+        - group_id
+        - assessment_id
+        - assessment_version
+        - visibility
+        - status
+        - phase
+        - start_time
+        - end_time
+        - submission_policy
+        - is_group_member
+        - can_participate
+        - denial_reason
+      properties:
+        contest_id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        assessment_id:
+          type: string
+          format: uuid
+        assessment_version:
+          type: integer
+          minimum: 1
+        visibility:
+          $ref: '#/components/schemas/ContestVisibility'
+        status:
+          $ref: '#/components/schemas/ContestStatus'
+        phase:
+          $ref: '#/components/schemas/ContestPhase'
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        submission_policy:
+          $ref: '#/components/schemas/ContestSubmissionPolicy'
+        is_group_member:
+          type: boolean
+        can_participate:
+          type: boolean
+        denial_reason:
+          type: string
+          nullable: true
+
+    InternalSubmissionContext:
+      type: object
+      required:
+        - contest_id
+        - group_id
+        - assessment_id
+        - assessment_version
+        - organizer_id
+        - visibility
+        - status
+        - phase
+        - start_time
+        - end_time
+        - submission_policy
+        - evaluation_rule
+        - is_group_member
+        - can_submit
+        - denial_reason
+      properties:
+        contest_id:
+          type: string
+          format: uuid
+        group_id:
+          type: string
+          format: uuid
+        assessment_id:
+          type: string
+          format: uuid
+        assessment_version:
+          type: integer
+          minimum: 1
+        organizer_id:
+          type: string
+          format: uuid
+        visibility:
+          $ref: '#/components/schemas/ContestVisibility'
+        status:
+          $ref: '#/components/schemas/ContestStatus'
+        phase:
+          $ref: '#/components/schemas/ContestPhase'
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        submission_policy:
+          $ref: '#/components/schemas/ContestSubmissionPolicy'
+        evaluation_rule:
+          $ref: '#/components/schemas/EvaluationRule'
+        is_group_member:
+          type: boolean
+        can_submit:
+          type: boolean
+        denial_reason:
+          type: string
+          nullable: true
+
+    CreateContestRequest:
+      type: object
+      required:
+        - group_id
+        - assessment_id
+        - title
+        - start_time
+        - end_time
+      properties:
+        group_id:
+          type: string
+          format: uuid
+        assessment_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          minLength: 2
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 4000
+          default: ""
+        visibility:
+          $ref: '#/components/schemas/ContestVisibility'
+          default: PRIVATE
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        submission_policy:
+          $ref: '#/components/schemas/ContestSubmissionPolicy'
+          default: SINGLE
+        status:
+          type: string
+          enum: [DRAFT, PUBLISHED]
+          default: DRAFT
+
+    UpdateContestRequest:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 2
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 4000
+        assessment_id:
+          type: string
+          format: uuid
+        visibility:
+          $ref: '#/components/schemas/ContestVisibility'
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        submission_policy:
+          $ref: '#/components/schemas/ContestSubmissionPolicy'
+        status:
+          type: string
+          enum: [DRAFT, PUBLISHED]
+
+    AdminUpdateContestStatusRequest:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/ContestStatus'
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+          description: Required when moving contest to DRAFT or CANCELLED.
+
+    AdminDeleteContestRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+
+paths:
+  /health:
+    get:
+      tags:
+        - Observability
+      summary: Health check
+      description: Returns the service operational status.
+      responses:
+        '200':
+          description: Service is healthy.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - status
+                  - service
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: contest-service
+
+  /api/v1/internal/contests:
+    get:
+      tags:
+        - Contests
+      summary: List contests
+      description: Returns paginated public contests or group-scoped contests filtered by visibility, status, phase, and keyword.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Optional group UUID filter.
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            $ref: '#/components/schemas/ContestVisibility'
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/ContestStatus'
+        - in: query
+          name: phase
+          required: false
+          schema:
+            $ref: '#/components/schemas/ContestPhase'
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+      responses:
+        '200':
+          description: Paginated contest list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedContestList'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    post:
+      tags:
+        - Contests
+      summary: Create contest
+      description: Creates a contest for an existing assessment owned by the target group on behalf of a group manager.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContestRequest'
+      responses:
+        '201':
+          description: Contest created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/contests/{id}:
+    get:
+      tags:
+        - Contests
+      summary: Get contest details
+      description: Returns contest details, schedule, rules, and phase when accessible to the caller.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/OptionalXUserId'
+        - $ref: '#/components/parameters/OptionalXUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      responses:
+        '200':
+          description: Contest details retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    patch:
+      tags:
+        - Contests
+      summary: Update contest
+      description: Updates an unstarted contest or adjusts permitted metadata and end time of an ongoing contest for a group manager.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContestRequest'
+      responses:
+        '200':
+          description: Contest updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Contests
+      summary: Delete contest
+      description: Removes a contest that is not currently ongoing on behalf of a group manager.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      responses:
+        '204':
+          description: Contest deleted.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/contests/{id}/cancel:
+    post:
+      tags:
+        - Contests
+      summary: Cancel contest
+      description: Marks a draft, upcoming, or ongoing contest as cancelled for a group manager.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      responses:
+        '200':
+          description: Contest cancelled.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestSummary'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/contests/{id}/participation:
+    get:
+      tags:
+        - Contests
+      summary: Check contest participation eligibility
+      description: Checks whether the authenticated user can participate in the contest during its active window.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      responses:
+        '200':
+          description: Participation status evaluated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ContestParticipationInfo'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/contests/{id}/submission-context:
+    get:
+      tags:
+        - Service
+      summary: Get contest submission context
+      description: Returns pinned assessment version, submission policy, and user submission eligibility for internal callers.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/ContestIdParam'
+        - in: query
+          name: user_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: Target participant user UUID.
+      responses:
+        '200':
+          description: Submission context retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InternalSubmissionContext'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '502':
+          $ref: '#/components/responses/BadGateway'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/contests:
+    get:
+      tags:
+        - Admin
+      summary: Admin list contests
+      description: Returns paginated contests across all groups for platform administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/PageQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+        - in: query
+          name: group_id
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - in: query
+          name: visibility
+          required: false
+          schema:
+            $ref: '#/components/schemas/ContestVisibility'
+        - in: query
+          name: status
+          required: false
+          schema:
+            $ref: '#/components/schemas/ContestStatus'
+        - in: query
+          name: phase
+          required: false
+          schema:
+            $ref: '#/components/schemas/ContestPhase'
+        - in: query
+          name: search
+          required: false
+          schema:
+            type: string
+            maxLength: 120
+      responses:
+        '200':
+          description: Paginated admin contest list retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAdminContests'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/contests/{id}:
+    get:
+      tags:
+        - Admin
+      summary: Admin get contest details
+      description: Returns full contest details including moderation metadata for platform administrators.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      responses:
+        '200':
+          description: Admin contest record retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminContestRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+    delete:
+      tags:
+        - Admin
+      summary: Admin remove contest
+      description: Soft-deletes a policy-violating contest with optional moderation reason.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminDeleteContestRequest'
+      responses:
+        '204':
+          description: Contest removed.
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'
+
+  /api/v1/internal/admin/contests/{id}/status:
+    patch:
+      tags:
+        - Admin
+      summary: Admin update contest status
+      description: Publishes, unpublishes, or cancels a contest with moderation audit metadata.
+      parameters:
+        - $ref: '#/components/parameters/XInternalSecret'
+        - $ref: '#/components/parameters/XUserId'
+        - $ref: '#/components/parameters/XUserRole'
+        - $ref: '#/components/parameters/ContestIdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminUpdateContestStatusRequest'
+      responses:
+        '200':
+          description: Contest moderation status updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminContestRecord'
+        '400':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Unauthorized'
+        '403':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/Forbidden'
+        '404':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/NotFound'
+        '500':
+          $ref: '../../../packages/docs/common/errors.yaml#/components/responses/InternalError'

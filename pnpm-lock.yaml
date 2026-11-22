@@ -96,24 +96,26 @@ importers:
   applications/contest-service:
     dependencies:
       '@hono/node-server':
-        specifier: ^1.13.0
-        version: 1.19.19(hono@4.13.17)
-      dotenv:
-        specifier: ^16.4.0
-        version: 16.4.7
+        specifier: ^2.1.8
+        version: 2.1.8(hono@4.13.17)
+      '@hono/zod-validator':
+        specifier: ^0.4.3
+        version: 0.4.3(hono@4.13.17)(zod@3.25.76)
+      '@mikro-orm/postgresql':
+        specifier: ^7.2.8
+        version: 7.2.8(@mikro-orm/core@7.2.8)
+      got:
+        specifier: ^16.2.0
+        version: 16.2.0
       hono:
-        specifier: ^4.13.0
+        specifier: ^4.13.17
         version: 4.13.17
-      pg:
-        specifier: ^8.13.0
-        version: 8.23.1
+      uuid:
+        specifier: ^14.0.3
+        version: 14.0.3
       zod:
-        specifier: ^3.24.0
+        specifier: ^3.24.2
         version: 3.25.76
-    devDependencies:
-      '@types/pg':
-        specifier: ^8.11.0
-        version: 8.23.1
 
   applications/frontend:
     dependencies:
@@ -1117,12 +1119,6 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
-
-  '@hono/node-server@1.19.19':
-    resolution: {integrity: sha512-Fy9R7PACOzHU9LDpfnuzVyuVYevKQRcEG2mZhmfc+DRdmayEd3RVfa2XOt2IgGcPNgA77Yk63KBszepcMFK5Ng==}
-    engines: {node: '>=18.14.1'}
-    peerDependencies:
-      hono: ^4
 
   '@hono/node-server@2.1.8':
     resolution: {integrity: sha512-jdf7FHh6A1lzjpHHQUgxsg2GeER2vMetnAOfeActzcoli6jamlK+NAwL6Dsr5Fl3BS3tYUQzCdtZjU8Qxv7bEA==}
@@ -4788,10 +4784,6 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
-
-  '@hono/node-server@1.19.19(hono@4.13.17)':
-    dependencies:
-      hono: 4.13.17
 
   '@hono/node-server@2.1.8(hono@4.13.17)':
     dependencies:
