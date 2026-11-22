@@ -1,7 +1,38 @@
 {
-  "name": "submission-service",
-  "$schema": "../../node_modules/nx/schemas/project-schema.json",
-  "projectType": "application",
-  "sourceRoot": "applications/submission-service",
-  "tags": []
+    "name": "submission-service",
+    "$schema": "../../node_modules/nx/schemas/project-schema.json",
+    "projectType": "application",
+    "sourceRoot": "applications/submission-service",
+    "tags": [],
+    "targets": {
+        "serve": {
+            "executor": "nx:run-commands",
+            "continuous": true,
+            "options": {
+                "cwd": "applications/submission-service",
+                "command": "go run ./cmd/server"
+            }
+        },
+        "build": {
+            "executor": "nx:run-commands",
+            "options": {
+                "cwd": "applications/submission-service",
+                "command": "go build -o ../../dist/applications/submission-service/server ./cmd/server"
+            }
+        },
+        "test": {
+            "executor": "nx:run-commands",
+            "options": {
+                "cwd": "applications/submission-service",
+                "command": "go test -v ./..."
+            }
+        },
+        "lint": {
+            "executor": "nx:run-commands",
+            "options": {
+                "cwd": "applications/submission-service",
+                "command": "go vet ./..."
+            }
+        }
+    }
 }
