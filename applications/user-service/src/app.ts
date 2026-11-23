@@ -11,6 +11,7 @@ import { createServiceRoute } from "./auth/service.route";
 import { forkEm } from "./db/orm";
 import { loadEnvConfig, type EnvConfig } from "./shared/env";
 import { handleAppError } from "./shared/errors";
+import { metricsHandler, metricsMiddleware } from "./shared/metrics";
 import { attachEntityManager, requireInternalSecret } from "./shared/middleware";
 import type { AppEnv, OAuthProvider } from "./shared/types";
 import { createAdminRoute } from "./users/admin.route";
@@ -53,7 +54,10 @@ export function createApp(dependencies: AppDependencies = {}): Hono<AppEnv> {
         })
     );
 
+    app.use("*", metricsMiddleware());
+
     app.get("/health", (c): Response => c.json({ status: "ok", service: "user-service" }, 200));
+    app.get("/metrics", metricsHandler());
 
     app.use("/api/v1/internal/*", requireInternalSecret(env.internalServiceSecret));
     app.use("/api/v1/internal/*", attachEntityManager(forkEntityManager));

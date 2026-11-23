@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { createGatewayRoutes, type TokenVerifier } from "./gateway/routes";
 import { loadEnvConfig, type EnvConfig } from "./shared/env";
 import { handleAppError } from "./shared/errors";
+import { metricsHandler, metricsMiddleware } from "./shared/metrics";
 import type { AppEnv } from "./shared/types";
 
 export interface AppDependencies {
@@ -30,10 +31,14 @@ export function createApp(dependencies: AppDependencies = {}): Hono<AppEnv> {
         })
     );
 
+    app.use("*", metricsMiddleware());
+
     app.get(
         "/health",
         (c): Response => c.json({ status: "ok", service: "api-gateway" }, 200)
     );
+
+    app.get("/metrics", metricsHandler());
 
     app.route("/api/v1", createGatewayRoutes(env, dependencies.verifyToken));
 

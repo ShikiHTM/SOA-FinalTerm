@@ -20,6 +20,12 @@ import type {
 } from "../../../api/types";
 import { extractErrorMessage } from "../../../data/http/httpClient";
 import { formatDate, useApp } from "../../../shared/context";
+import {
+    buildPdfAnswers,
+    countPdfAnswered,
+    PdfAnswerSheet,
+    pdfRowIds
+} from "../../assessments/components/PdfAnswerSheet";
 import { ExpiredAttempt, type AutoSubmitStatus } from "../components/ExpiredAttempt";
 import { watchAttemptDeadline } from "../utils/attemptDeadline";
 import { resolveExpiredAttempt, type ExpiredAttemptResolution } from "../utils/resolveExpiredAttempt";
@@ -121,6 +127,9 @@ export function Attempt(): ReactNode {
 
     const buildPayloadAnswers: () => SubmittedAnswerInput[] =
         useCallback((): SubmittedAnswerInput[] => {
+            if (content?.content_format === "PDF") {
+                return buildPdfAnswers(pdfRowIds(contest?.assessment?.question_count), answers);
+            }
             if (!content?.questions) {
                 return Object.entries(answers).map(
                     ([question_id, value]): SubmittedAnswerInput => ({
@@ -144,7 +153,7 @@ export function Attempt(): ReactNode {
                               : ""
                 };
             });
-        }, [answers, content?.questions]);
+        }, [answers, content?.content_format, content?.questions, contest?.assessment?.question_count]);
 
     const submitAttempt: (automatic: boolean) => Promise<void> = useCallback(
         async (automatic: boolean): Promise<void> => {
@@ -266,17 +275,44 @@ export function Attempt(): ReactNode {
         );
     }
 
+    const isPdf: boolean = content.content_format === "PDF";
+    const rowIds: string[] = pdfRowIds(contest.assessment?.question_count);
     const questions: PublicQuestion[] = content.questions ?? [];
-    const answeredCount: number = questions.filter((q: PublicQuestion): boolean => {
-        const val: string | string[] | undefined = answers[q.id];
-        if (Array.isArray(val)) {
-            return val.length > 0;
-        }
-        return typeof val === "string" && val.trim().length > 0;
-    }).length;
+    const totalCount: number = isPdf ? rowIds.length : questions.length;
+    const answeredCount: number = isPdf
+        ? countPdfAnswered(rowIds, answers)
+        : questions.filter((q: PublicQuestion): boolean => {
+              const val: string | string[] | undefined = answers[q.id];
+              if (Array.isArray(val)) {
+                  return val.length > 0;
+              }
+              return typeof val === "string" && val.trim().length > 0;
+          }).length;
+
+    const submitFooter: ReactNode = (
+        <>
+            {error && (
+                <p className="error" role="alert">
+                    {error}
+                </p>
+            )}
+            <button
+                className="button primary attempt-submit"
+                type="button"
+                disabled={submissionStatus === "submitting"}
+                onClick={(): void => {
+                    if (window.confirm("Submit your answers now?")) {
+                        void submitAttempt(false);
+                    }
+                }}
+            >
+                {submissionStatus === "submitting" ? "Submitting..." : "Submit attempt"}
+            </button>
+        </>
+    );
 
     return (
-        <div className="attempt-page page-enter">
+        <div className={isPdf ? "attempt-page attempt-page-wide page-enter" : "attempt-page page-enter"}>
             <div className="assessment-breadcrumb">
                 <Link to={`/contests/${contest.id}`}>Contest details</Link>
                 <span>/</span>
@@ -292,137 +328,113 @@ export function Attempt(): ReactNode {
                     </div>
                     <h1>{contest.title}</h1>
                     <p>
-                        Closes {formatDate(contest.end_time)} · Answers are saved locally in this
+                        Closes {formatDate(contest.end_time)} Â· Answers are saved locally in this
                         browser while you work.
                     </p>
                 </div>
-                {questions.length > 0 && (
+                {totalCount > 0 && (
                     <span className="assessment-count">
-                        Answered {answeredCount}/{questions.length}
+                        Answered {answeredCount}/{totalCount}
                     </span>
                 )}
             </header>
 
-            <div className="form attempt-question-list">
-                {content.content_format === "PDF" && content.pdf_url && (
-                    <section className="panel">
-                        <h2>PDF Assessment</h2>
-                        <p className="muted">
-                            Open the exam PDF document in a new tab while submitting your answers
-                            below.
-                        </p>
-                        <a
-                            className="button primary"
-                            href={content.pdf_url}
-                            target="_blank"
-                            rel="noreferrer"
-                        >
-                            Open PDF Exam
-                        </a>
-                    </section>
-                )}
-
-                {questions.map(
-                    (question: PublicQuestion, index: number): ReactNode => (
-                        <section className="panel attempt-question" key={question.id}>
-                            <p className="eyebrow">
-                                QUESTION {index + 1} · {question.points} PTS ·{" "}
-                                {question.question_type}
-                            </p>
-                            <h2>{question.prompt}</h2>
-                            {question.options && question.options.length > 0 ? (
-                                <div className="form">
-                                    {question.options.map((option): ReactNode => {
-                                        const currentVal: string | string[] | undefined =
-                                            answers[question.id];
-                                        const checked: boolean =
-                                            question.question_type === "MULTIPLE_CHOICE"
-                                                ? Array.isArray(currentVal) &&
-                                                  currentVal.includes(option.key)
-                                                : currentVal === option.key;
-                                        return (
-                                            <label className="check option" key={option.key}>
-                                                <input
-                                                    type={
-                                                        question.question_type === "MULTIPLE_CHOICE"
-                                                            ? "checkbox"
-                                                            : "radio"
-                                                    }
-                                                    name={question.id}
-                                                    checked={checked}
-                                                    onChange={(event): void => {
-                                                        if (
-                                                            question.question_type ===
-                                                            "MULTIPLE_CHOICE"
-                                                        ) {
-                                                            const prev: string[] = Array.isArray(
-                                                                currentVal
-                                                            )
-                                                                ? currentVal
-                                                                : [];
+            {isPdf ? (
+                <PdfAnswerSheet
+                    pdfUrl={content.pdf_url}
+                    title={contest.title}
+                    rowIds={rowIds}
+                    answers={answers}
+                    onChange={setAnswers}
+                    footer={submitFooter}
+                />
+            ) : (
+                <div className="form attempt-question-list">
+                    {questions.map(
+                        (question: PublicQuestion, index: number): ReactNode => (
+                            <section className="panel attempt-question" key={question.id}>
+                                <p className="eyebrow">
+                                    QUESTION {index + 1} Â· {question.points} PTS Â·{" "}
+                                    {question.question_type}
+                                </p>
+                                <h2>{question.prompt}</h2>
+                                {question.options && question.options.length > 0 ? (
+                                    <div className="form">
+                                        {question.options.map((option): ReactNode => {
+                                            const currentVal: string | string[] | undefined =
+                                                answers[question.id];
+                                            const checked: boolean =
+                                                question.question_type === "MULTIPLE_CHOICE"
+                                                    ? Array.isArray(currentVal) &&
+                                                      currentVal.includes(option.key)
+                                                    : currentVal === option.key;
+                                            return (
+                                                <label className="check option" key={option.key}>
+                                                    <input
+                                                        type={
+                                                            question.question_type === "MULTIPLE_CHOICE"
+                                                                ? "checkbox"
+                                                                : "radio"
+                                                        }
+                                                        name={question.id}
+                                                        checked={checked}
+                                                        onChange={(event): void => {
+                                                            if (
+                                                                question.question_type ===
+                                                                "MULTIPLE_CHOICE"
+                                                            ) {
+                                                                const prev: string[] = Array.isArray(
+                                                                    currentVal
+                                                                )
+                                                                    ? currentVal
+                                                                    : [];
+                                                                setAnswers({
+                                                                    ...answers,
+                                                                    [question.id]: event.target.checked
+                                                                        ? [...prev, option.key]
+                                                                        : prev.filter(
+                                                                              (k): boolean =>
+                                                                                  k !== option.key
+                                                                          )
+                                                                });
+                                                                return;
+                                                            }
                                                             setAnswers({
                                                                 ...answers,
-                                                                [question.id]: event.target.checked
-                                                                    ? [...prev, option.key]
-                                                                    : prev.filter(
-                                                                          (k): boolean =>
-                                                                              k !== option.key
-                                                                      )
+                                                                [question.id]: option.key
                                                             });
-                                                            return;
-                                                        }
-                                                        setAnswers({
-                                                            ...answers,
-                                                            [question.id]: option.key
-                                                        });
-                                                    }}
-                                                />{" "}
-                                                <span>
-                                                    <strong>{option.key}.</strong> {option.text}
-                                                </span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <textarea
-                                    rows={question.question_type === "ESSAY" ? 5 : 2}
-                                    value={
-                                        typeof answers[question.id] === "string"
-                                            ? (answers[question.id] as string)
-                                            : ""
-                                    }
-                                    onChange={(event): void =>
-                                        setAnswers({
-                                            ...answers,
-                                            [question.id]: event.target.value
-                                        })
-                                    }
-                                />
-                            )}
-                        </section>
-                    )
-                )}
+                                                        }}
+                                                    />{" "}
+                                                    <span>
+                                                        <strong>{option.key}.</strong> {option.text}
+                                                    </span>
+                                                </label>
+                                            );
+                                        })}
+                                    </div>
+                                ) : (
+                                    <textarea
+                                        rows={question.question_type === "ESSAY" ? 5 : 2}
+                                        value={
+                                            typeof answers[question.id] === "string"
+                                                ? (answers[question.id] as string)
+                                                : ""
+                                        }
+                                        onChange={(event): void =>
+                                            setAnswers({
+                                                ...answers,
+                                                [question.id]: event.target.value
+                                            })
+                                        }
+                                    />
+                                )}
+                            </section>
+                        )
+                    )}
 
-                {error && (
-                    <p className="error" role="alert">
-                        {error}
-                    </p>
-                )}
-
-                <button
-                    className="button primary attempt-submit"
-                    type="button"
-                    disabled={submissionStatus === "submitting"}
-                    onClick={(): void => {
-                        if (window.confirm("Submit your answers now?")) {
-                            void submitAttempt(false);
-                        }
-                    }}
-                >
-                    {submissionStatus === "submitting" ? "Submitting..." : "Submit attempt"}
-                </button>
-            </div>
+                    {submitFooter}
+                </div>
+            )}
         </div>
     );
 }

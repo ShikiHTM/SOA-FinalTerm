@@ -1,18 +1,19 @@
 import type { EntityManager } from "@mikro-orm/postgresql";
 import { Hono, type Context } from "hono";
 import { AppError } from "../shared/errors";
+import { lmsGroupEventsTotal } from "../shared/metrics";
 import {
     createZodValidator,
     optionalAuthenticatedHeaders,
     parseOptionalJsonBody,
     requireAuthenticatedHeaders
 } from "../shared/middleware";
-import type {
-    AppEnv,
-    GroupMemberRole,
+import {
     JoinRequestStatus,
-    PaginatedResult,
-    UserSystemRole
+    type AppEnv,
+    type GroupMemberRole,
+    type PaginatedResult,
+    type UserSystemRole
 } from "../shared/types";
 import {
     createGroup,
@@ -101,6 +102,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const payload: CreateGroupDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: GroupSummary = await createGroup(ownerId, payload, em);
+            lmsGroupEventsTotal.inc({ action: "created" });
             return c.json(result, 201);
         }
     );
@@ -168,6 +170,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await deleteGroupByOwner(params.id, actorId, em);
+            lmsGroupEventsTotal.inc({ action: "deleted" });
             return c.body(null, 204);
         }
     );
@@ -207,6 +210,7 @@ export function createGroupRoute(): Hono<AppEnv> {
                 payload.password,
                 em
             );
+            lmsGroupEventsTotal.inc({ action: "joined" });
             return c.json(result, 201);
         }
     );
@@ -220,6 +224,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await leaveGroup(params.id, userId, em);
+            lmsGroupEventsTotal.inc({ action: "left" });
             return c.body(null, 204);
         }
     );
@@ -233,6 +238,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const params: { id: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             const result: JoinRequestRecord = await requestJoinGroup(params.id, userId, em);
+            lmsGroupEventsTotal.inc({ action: "join_requested" });
             return c.json(result, 201);
         }
     );
@@ -278,6 +284,12 @@ export function createGroupRoute(): Hono<AppEnv> {
                 payload.decision,
                 em
             );
+            lmsGroupEventsTotal.inc({
+                action:
+                    payload.decision === JoinRequestStatus.APPROVED
+                        ? "join_approved"
+                        : "join_rejected"
+            });
             return c.json(result, 200);
         }
     );
@@ -351,6 +363,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const params: { id: string; userId: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await removeGroupMember(params.id, params.userId, actorId, em);
+            lmsGroupEventsTotal.inc({ action: "member_removed" });
             return c.body(null, 204);
         }
     );
@@ -388,6 +401,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const payload: BanMemberDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const result: GroupBanRecord = await banGroupUser(params.id, actorId, payload, em);
+            lmsGroupEventsTotal.inc({ action: "member_banned" });
             return c.json(result, 201);
         }
     );
@@ -401,6 +415,7 @@ export function createGroupRoute(): Hono<AppEnv> {
             const params: { id: string; userId: string } = c.req.valid("param");
             const em: EntityManager = c.get("em");
             await unbanGroupUser(params.id, params.userId, actorId, em);
+            lmsGroupEventsTotal.inc({ action: "member_unbanned" });
             return c.body(null, 204);
         }
     );

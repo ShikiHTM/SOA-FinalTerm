@@ -11,6 +11,7 @@ import (
 
 	"applications/submission-service/internal/client"
 	"applications/submission-service/internal/kafka"
+	"applications/submission-service/internal/metrics"
 	"github.com/google/uuid"
 )
 
@@ -354,6 +355,7 @@ func (s *Service) Create(
 	if err != nil {
 		return CreateSubmissionResult{}, err
 	}
+	metrics.SubmissionsCreatedTotal.WithLabelValues(string(created.SubmissionMode), string(created.TriggerType)).Inc()
 
 	event := kafka.SubmissionSubmittedEvent{
 		EventID:      uuid.NewString(),
@@ -362,6 +364,7 @@ func (s *Service) Create(
 	}
 	if err := s.broker.PublishSubmission(ctx, event); err != nil {
 		_ = s.store.MarkGradingFailed(ctx, created.ID, time.Now().UTC())
+		metrics.GradingCompletedTotal.WithLabelValues("auto", string(StatusFailed)).Inc()
 		return CreateSubmissionResult{}, BadGateway("QUEUE_PUBLISH_FAILED", "Failed to enqueue submission for grading.")
 	}
 
@@ -389,6 +392,7 @@ func (s *Service) ProcessSubmittedEvent(ctx context.Context, event kafka.Submiss
 		var upstreamErr *client.UpstreamError
 		if errors.As(err, &upstreamErr) && upstreamErr.StatusCode >= 400 && upstreamErr.StatusCode < 500 {
 			_ = s.store.MarkGradingFailed(ctx, sub.ID, time.Now().UTC())
+			metrics.GradingCompletedTotal.WithLabelValues("auto", string(StatusFailed)).Inc()
 			return nil
 		}
 		return err
@@ -398,6 +402,10 @@ func (s *Service) ProcessSubmittedEvent(ctx context.Context, event kafka.Submiss
 	outcome := BuildAutoGradedAnswers(sub.ID, sub.Answers, gradingData.Answers, now)
 	if err := s.store.SaveAutoGradeResult(ctx, sub.ID, outcome); err != nil {
 		return err
+	}
+	metrics.GradingCompletedTotal.WithLabelValues("auto", string(outcome.GradingStatus)).Inc()
+	if outcome.TotalScore != nil && outcome.MaxScore > 0 {
+		metrics.SubmissionScoreRatio.WithLabelValues(string(sub.SubmissionMode)).Observe(*outcome.TotalScore / outcome.MaxScore)
 	}
 
 	if outcome.GradingStatus == StatusGraded {
@@ -524,6 +532,10 @@ func (s *Service) GradeEssays(
 	updated, err := s.store.ApplyManualGrades(ctx, sub.ID, updates, actorID, time.Now().UTC())
 	if err != nil {
 		return Submission{}, err
+	}
+	metrics.GradingCompletedTotal.WithLabelValues("manual", string(updated.GradingStatus)).Inc()
+	if updated.GradingStatus == StatusGraded && updated.TotalScore != nil && updated.MaxScore > 0 {
+		metrics.SubmissionScoreRatio.WithLabelValues(string(updated.SubmissionMode)).Observe(*updated.TotalScore / updated.MaxScore)
 	}
 	if updated.GradingStatus == StatusGraded {
 		s.publishGradedNotification(ctx, updated)

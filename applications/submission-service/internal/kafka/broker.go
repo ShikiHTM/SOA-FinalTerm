@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"applications/submission-service/internal/config"
+	"applications/submission-service/internal/metrics"
 	kafkago "github.com/segmentio/kafka-go"
 )
 
@@ -72,13 +73,19 @@ func NewBroker(cfg config.Config) Broker {
 func publishJSON(ctx context.Context, writer *kafkago.Writer, key string, payload any) error {
 	raw, err := json.Marshal(payload)
 	if err != nil {
+		metrics.KafkaMessagesPublishedTotal.WithLabelValues(writer.Topic, "error").Inc()
 		return fmt.Errorf("marshal kafka message: %w", err)
 	}
-	return writer.WriteMessages(ctx, kafkago.Message{
+	if err := writer.WriteMessages(ctx, kafkago.Message{
 		Key:   []byte(key),
 		Value: raw,
 		Time:  time.Now().UTC(),
-	})
+	}); err != nil {
+		metrics.KafkaMessagesPublishedTotal.WithLabelValues(writer.Topic, "error").Inc()
+		return err
+	}
+	metrics.KafkaMessagesPublishedTotal.WithLabelValues(writer.Topic, "success").Inc()
+	return nil
 }
 
 func (b *KafkaBroker) PublishSubmission(ctx context.Context, event SubmissionSubmittedEvent) error {
@@ -109,8 +116,16 @@ func (b *KafkaBroker) StartConsumer(
 				}
 			}
 
+			start := time.Now()
+			topic := msg.Topic
+			if topic == "" {
+				topic = b.submissionReader.Config().Topic
+			}
+
 			var event SubmissionSubmittedEvent
 			if err := json.Unmarshal(msg.Value, &event); err != nil {
+				metrics.KafkaMessagesConsumedTotal.WithLabelValues(topic, "invalid").Inc()
+				metrics.KafkaMessageProcessingDurationSeconds.WithLabelValues(topic).Observe(time.Since(start).Seconds())
 				slog.Error("invalid submission event payload", "error", err)
 				if commitErr := b.submissionReader.CommitMessages(ctx, msg); commitErr != nil {
 					slog.Error("commit invalid submission message", "error", commitErr)
@@ -119,6 +134,8 @@ func (b *KafkaBroker) StartConsumer(
 			}
 
 			if err := handler(ctx, event); err != nil {
+				metrics.KafkaMessagesConsumedTotal.WithLabelValues(topic, "error").Inc()
+				metrics.KafkaMessageProcessingDurationSeconds.WithLabelValues(topic).Observe(time.Since(start).Seconds())
 				slog.Error("process submission event failed", "submission_id", event.SubmissionID, "error", err)
 				select {
 				case <-ctx.Done():
@@ -128,6 +145,8 @@ func (b *KafkaBroker) StartConsumer(
 				}
 			}
 
+			metrics.KafkaMessagesConsumedTotal.WithLabelValues(topic, "success").Inc()
+			metrics.KafkaMessageProcessingDurationSeconds.WithLabelValues(topic).Observe(time.Since(start).Seconds())
 			if err := b.submissionReader.CommitMessages(ctx, msg); err != nil {
 				slog.Error("commit submission message", "submission_id", event.SubmissionID, "error", err)
 			}

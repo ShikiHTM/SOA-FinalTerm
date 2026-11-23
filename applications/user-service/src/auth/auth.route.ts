@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { UserEntity } from "../db/entities/user.entity";
 import type { EnvConfig } from "../shared/env";
 import { AppError } from "../shared/errors";
+import { lmsAuthAttemptsTotal, lmsUserRegistrationsTotal } from "../shared/metrics";
 import { createZodValidator, requireAuthenticatedHeaders } from "../shared/middleware";
 import type { AppEnv, AuthResponse, OAuthProvider } from "../shared/types";
 import { issueAuthResponse, revokeSessionToken } from "./auth.token";
@@ -53,9 +54,15 @@ export function createAuthRoute(
         async (c): Promise<Response> => {
             const payload: LoginRequestDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
-            const user: UserEntity = await loginWithCredentials(payload, em);
-            const result: AuthResponse = await issueAuthResponse(user, env, em);
-            return c.json(result, 200);
+            try {
+                const user: UserEntity = await loginWithCredentials(payload, em);
+                const result: AuthResponse = await issueAuthResponse(user, env, em);
+                lmsAuthAttemptsTotal.inc({ method: "password", result: "success" });
+                return c.json(result, 200);
+            } catch (error: unknown) {
+                lmsAuthAttemptsTotal.inc({ method: "password", result: "failure" });
+                throw error;
+            }
         }
     );
 
@@ -66,6 +73,7 @@ export function createAuthRoute(
             const payload: RegisterRequestDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
             const user: UserEntity = await registerWithCredentials(payload, em);
+            lmsUserRegistrationsTotal.inc({ method: "password" });
             const result: AuthResponse = await issueAuthResponse(user, env, em);
             return c.json(result, 201);
         }
@@ -77,9 +85,16 @@ export function createAuthRoute(
         async (c): Promise<Response> => {
             const payload: OAuthLoginRequestDto = c.req.valid("json");
             const em: EntityManager = c.get("em");
-            const user: UserEntity = await authenticateWithOAuth(payload, oauthStrategies, em);
-            const result: AuthResponse = await issueAuthResponse(user, env, em);
-            return c.json(result, 200);
+            const method: string = payload.provider.toLowerCase();
+            try {
+                const user: UserEntity = await authenticateWithOAuth(payload, oauthStrategies, em);
+                const result: AuthResponse = await issueAuthResponse(user, env, em);
+                lmsAuthAttemptsTotal.inc({ method, result: "success" });
+                return c.json(result, 200);
+            } catch (error: unknown) {
+                lmsAuthAttemptsTotal.inc({ method, result: "failure" });
+                throw error;
+            }
         }
     );
 

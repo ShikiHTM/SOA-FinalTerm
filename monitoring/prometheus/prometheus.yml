@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - alerts.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets:
+          - localhost:9090
+
+  - job_name: api-gateway
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - api_gateway:3000
+
+  - job_name: user-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - user_service:3031
+
+  - job_name: group-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - group_service:8002
+
+  - job_name: assessment-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - assessment_service:8003
+
+  - job_name: contest-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - contest_service:8004
+
+  - job_name: submission-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - submission_service:8005
+
+  - job_name: notification-service
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - notification_service:3037

@@ -344,6 +344,38 @@ services:
     environment:
       - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-token}
 
+  prometheus:
+    image: prom/prometheus:v3.2.1
+    container_name: lms_prometheus
+    ports:
+      - ${PROMETHEUS_PORT:-9090}:9090
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+    restart: on-failure
+
+  grafana:
+    image: grafana/grafana:11.5.2
+    container_name: lms_grafana
+    ports:
+      - ${GRAFANA_PORT:-3001}:3000
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: on-failure
+
 volumes:
   user_data:
   group_data:
@@ -351,3 +383,5 @@ volumes:
   contest_data:
   submission_data:
   notification_data:
+  prometheus_data:
+  grafana_data:

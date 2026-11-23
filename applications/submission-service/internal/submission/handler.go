@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"applications/submission-service/internal/config"
+	"applications/submission-service/internal/metrics"
 	"applications/submission-service/internal/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -46,12 +47,14 @@ func NewRouter(cfg config.Config, svc *Service) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery())
 	router.Use(middleware.CORS(cfg.CORSAllowedOrigins))
+	router.Use(metrics.GinMiddleware())
 
 	handler := &Handler{service: svc}
 
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "submission-service"})
 	})
+	router.GET("/metrics", metrics.Handler())
 
 	internal := router.Group("/api/v1/internal")
 	internal.Use(middleware.RequireInternalSecret(cfg.InternalServiceSecret))

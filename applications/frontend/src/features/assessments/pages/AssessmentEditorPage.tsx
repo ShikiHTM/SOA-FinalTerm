@@ -21,6 +21,7 @@ import type {
 } from "../../../api/types";
 import { extractErrorMessage } from "../../../data/http/httpClient";
 import { canManage, PageTitle, useApp } from "../../../shared/context";
+import { PDF_CHOICE_KEYS } from "../components/PdfAnswerSheet";
 
 interface EditableQuestion {
     id: string;
@@ -45,10 +46,7 @@ function makeEditableQuestion(questionType: QuestionType = "SINGLE_CHOICE"): Edi
         prompt: "",
         points: 10,
         options: hasChoices
-            ? [
-                  { key: "A", text: "" },
-                  { key: "B", text: "" }
-              ]
+            ? ["A", "B", "C", "D"].map((key: string): QuestionOption => ({ key, text: "" }))
             : [],
         correct_answer: questionType === "MULTIPLE_CHOICE" ? [] : "",
         grading_rubric: ""
@@ -241,6 +239,16 @@ export function AssessmentEditor(): ReactNode {
                     return `Select at least one correct option for question ${i + 1}.`;
                 }
             }
+            if (mode === "PDF" && q.question_type === "SINGLE_CHOICE" && !q.correct_answer) {
+                return `Select the correct option for row ${i + 1}.`;
+            }
+            if (
+                mode === "PDF" &&
+                q.question_type === "MULTIPLE_CHOICE" &&
+                (!Array.isArray(q.correct_answer) || q.correct_answer.length === 0)
+            ) {
+                return `Select at least one correct option for row ${i + 1}.`;
+            }
             if (q.question_type === "FILL_IN_THE_BLANK") {
                 if (typeof q.correct_answer !== "string" || !q.correct_answer.trim()) {
                     return `Enter an expected answer for question ${i + 1}.`;
@@ -307,8 +315,8 @@ export function AssessmentEditor(): ReactNode {
             }
 
             const answerKeyItems: AnswerKeyItem[] = questions.map(
-                (q: EditableQuestion): AnswerKeyItem => ({
-                    question_id: q.id,
+                (q: EditableQuestion, index: number): AnswerKeyItem => ({
+                    question_id: String(index + 1),
                     question_type: q.question_type,
                     points: q.points,
                     correct_answer: q.question_type === "ESSAY" ? null : q.correct_answer,
@@ -478,7 +486,9 @@ export function AssessmentEditor(): ReactNode {
                             (question: EditableQuestion, index: number): ReactNode => (
                                 <div className="question-editor" key={question.id}>
                                     <div className="question-top">
-                                        <strong>Question {index + 1}</strong>
+                                        <strong>
+                                            {mode === "PDF" ? `Row ${index + 1}` : `Question ${index + 1}`}
+                                        </strong>
                                         <button
                                             type="button"
                                             className="link-button"
@@ -567,34 +577,71 @@ export function AssessmentEditor(): ReactNode {
                                                     }
                                                 />
                                             </label>
+                                        ) : question.question_type === "SINGLE_CHOICE" ||
+                                          question.question_type === "MULTIPLE_CHOICE" ? (
+                                            <div className="answer-sheet-row answer-key-row">
+                                                <span className="label">Correct answer</span>
+                                                <div className="answer-bubble-group">
+                                                    {PDF_CHOICE_KEYS.map((key: string): ReactNode => {
+                                                        const selected: string[] = Array.isArray(
+                                                            question.correct_answer
+                                                        )
+                                                            ? question.correct_answer
+                                                            : [question.correct_answer];
+                                                        const active: boolean = selected.includes(key);
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={key}
+                                                                aria-pressed={active}
+                                                                aria-label={`Row ${index + 1} correct option ${key}`}
+                                                                className={
+                                                                    active
+                                                                        ? "answer-bubble active"
+                                                                        : "answer-bubble"
+                                                                }
+                                                                onClick={(): void =>
+                                                                    updateQuestion(index, {
+                                                                        ...question,
+                                                                        correct_answer:
+                                                                            question.question_type ===
+                                                                            "MULTIPLE_CHOICE"
+                                                                                ? active
+                                                                                    ? selected.filter(
+                                                                                          (k): boolean =>
+                                                                                              k !== key
+                                                                                      )
+                                                                                    : [
+                                                                                          ...selected.filter(
+                                                                                              Boolean
+                                                                                          ),
+                                                                                          key
+                                                                                      ]
+                                                                                : key
+                                                                    })
+                                                                }
+                                                            >
+                                                                {key}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
                                         ) : (
                                             <label>
-                                                Expected answer{" "}
-                                                {question.question_type === "MULTIPLE_CHOICE" &&
-                                                    "(comma-separated keys, e.g. A, C)"}
+                                                Expected answer
                                                 <input
-                                                    placeholder="e.g. A"
                                                     value={
-                                                        Array.isArray(question.correct_answer)
-                                                            ? question.correct_answer.join(", ")
-                                                            : question.correct_answer
+                                                        typeof question.correct_answer === "string"
+                                                            ? question.correct_answer
+                                                            : ""
                                                     }
-                                                    onChange={(event): void => {
-                                                        const raw: string = event.target.value;
+                                                    onChange={(event): void =>
                                                         updateQuestion(index, {
                                                             ...question,
-                                                            correct_answer:
-                                                                question.question_type ===
-                                                                "MULTIPLE_CHOICE"
-                                                                    ? raw
-                                                                          .split(",")
-                                                                          .map((v): string =>
-                                                                              v.trim()
-                                                                          )
-                                                                          .filter(Boolean)
-                                                                    : raw
-                                                        });
-                                                    }}
+                                                            correct_answer: event.target.value
+                                                        })
+                                                    }
                                                 />
                                             </label>
                                         )

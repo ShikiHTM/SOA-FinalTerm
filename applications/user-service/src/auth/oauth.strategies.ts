@@ -9,6 +9,7 @@ import {
 import { UserSchema, type UserEntity } from "../db/entities/user.entity";
 import type { EnvConfig } from "../shared/env";
 import { AppError } from "../shared/errors";
+import { lmsUserRegistrationsTotal } from "../shared/metrics";
 import { OAuthProvider, UserStatus, UserSystemRole } from "../shared/types";
 import type { OAuthLoginRequestDto } from "./schemas/auth.schema";
 
@@ -172,6 +173,7 @@ async function resolveOAuthUser(
     em.persist(createdUser);
     em.persist(oauthLink);
     await em.flush();
+    lmsUserRegistrationsTotal.inc({ method: oauthProvider.toLowerCase() });
     return createdUser;
 }
 

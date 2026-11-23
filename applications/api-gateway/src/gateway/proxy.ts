@@ -3,6 +3,12 @@ import type { ContentfulStatusCode } from "hono/utils/http-status";
 import got, { type Method, type Response as GotResponse } from "got";
 import type { EnvConfig } from "../shared/env";
 import { AppError } from "../shared/errors";
+import {
+    gatewayAuthVerificationsTotal,
+    gatewayUpstreamDurationSeconds,
+    gatewayUpstreamRequestsTotal,
+    toStatusClass
+} from "../shared/metrics";
 import { UserSystemRole, type AppEnv, type ServiceKey, type UserSummary, type VerifiedUser } from "../shared/types";
 
 export interface ComposeContext {
@@ -72,6 +78,7 @@ export async function verifyBearerToken(token: string, env: EnvConfig): Promise<
             timeout: { request: INTERNAL_TIMEOUT_MS }
         });
     } catch {
+        gatewayAuthVerificationsTotal.inc({ result: "error" });
         throw AppError.badGateway("AUTH_SERVICE_UNAVAILABLE", "Unable to verify session token.");
     }
 
@@ -85,12 +92,14 @@ export async function verifyBearerToken(token: string, env: EnvConfig): Promise<
             (userRole === UserSystemRole.USER || userRole === UserSystemRole.ADMIN) &&
             typeof status === "string"
         ) {
+            gatewayAuthVerificationsTotal.inc({ result: "valid" });
             return {
                 userId,
                 userRole,
                 status
             };
         }
+        gatewayAuthVerificationsTotal.inc({ result: "error" });
         throw AppError.badGateway("AUTH_SERVICE_ERROR", "Authentication service returned an invalid response.");
     }
 
@@ -103,9 +112,11 @@ export async function verifyBearerToken(token: string, env: EnvConfig): Promise<
             isRecord(parsedBody) && typeof parsedBody.message === "string"
                 ? parsedBody.message
                 : "Invalid or expired session token.";
+        gatewayAuthVerificationsTotal.inc({ result: "invalid" });
         throw AppError.unauthorized(errorCode, message);
     }
 
+    gatewayAuthVerificationsTotal.inc({ result: "error" });
     throw AppError.badGateway("AUTH_SERVICE_UNAVAILABLE", "Unable to verify session token.");
 }
 
@@ -228,6 +239,7 @@ export async function forwardRequest(
         }
     }
 
+    const upstreamStartNs: bigint = process.hrtime.bigint();
     let upstreamResponse: GotResponse<Buffer>;
     try {
         upstreamResponse = await got(targetUrl, {
@@ -240,8 +252,18 @@ export async function forwardRequest(
             timeout: { request: UPSTREAM_TIMEOUT_MS }
         });
     } catch {
+        const elapsedSeconds: number = Number(process.hrtime.bigint() - upstreamStartNs) / 1e9;
+        gatewayUpstreamDurationSeconds.observe({ upstream: options.service }, elapsedSeconds);
+        gatewayUpstreamRequestsTotal.inc({ upstream: options.service, status_class: "error" });
         throw AppError.badGateway("UPSTREAM_UNAVAILABLE", "Upstream service is unavailable.");
     }
+
+    const upstreamSeconds: number = Number(process.hrtime.bigint() - upstreamStartNs) / 1e9;
+    gatewayUpstreamDurationSeconds.observe({ upstream: options.service }, upstreamSeconds);
+    gatewayUpstreamRequestsTotal.inc({
+        upstream: options.service,
+        status_class: toStatusClass(upstreamResponse.statusCode)
+    });
 
     if (upstreamResponse.statusCode === 204 || upstreamResponse.statusCode === 304) {
         return new Response(null, { status: upstreamResponse.statusCode });

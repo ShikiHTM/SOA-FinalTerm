@@ -7,6 +7,7 @@ import type {
     ServiceClients
 } from "../shared/clients";
 import { AppError } from "../shared/errors";
+import { lmsContestParticipationChecksTotal } from "../shared/metrics";
 import {
     AssessmentStatus,
     AssessmentVisibility,
@@ -614,11 +615,17 @@ async function evaluateContestEligibility(
         denialReason = "CONTEST_ENDED";
     }
 
+    const allowed: boolean = denialReason === null && phase === ContestPhase.ONGOING;
+    lmsContestParticipationChecksTotal.inc({
+        allowed: allowed ? "true" : "false",
+        denial_reason: allowed ? "NONE" : (denialReason ?? `PHASE_${phase}`)
+    });
+
     return {
         phase,
         isGroupMember: membership.is_member,
         canManage: membership.can_manage,
-        allowed: denialReason === null && phase === ContestPhase.ONGOING,
+        allowed,
         denialReason
     };
 }

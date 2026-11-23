@@ -7,6 +7,7 @@ import { forkEm } from "./db/orm";
 import { loadEnvConfig, type EnvConfig } from "./shared/env";
 import { handleAppError } from "./shared/errors";
 import { createGroupAccessClient, type GroupAccessClient } from "./shared/group-access";
+import { metricsHandler, metricsMiddleware } from "./shared/metrics";
 import { attachEntityManager, requireInternalSecret } from "./shared/middleware";
 import type { AppEnv } from "./shared/types";
 import { createS3AssessmentStorage, type AssessmentStorage } from "./storage/s3.storage";
@@ -49,10 +50,14 @@ export function createApp(dependencies: AppDependencies = {}): Hono<AppEnv> {
         })
     );
 
+    app.use("*", metricsMiddleware());
+
     app.get(
         "/health",
         (c): Response => c.json({ status: "ok", service: "assessment-service" }, 200)
     );
+
+    app.get("/metrics", metricsHandler());
 
     app.use("/api/v1/internal/*", requireInternalSecret(env.internalServiceSecret));
     app.use("/api/v1/internal/*", attachEntityManager(forkEntityManager));

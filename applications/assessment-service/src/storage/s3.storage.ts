@@ -11,6 +11,28 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import type { EnvConfig } from "../shared/env";
 import { AppError } from "../shared/errors";
+import {
+    assessmentS3OperationDurationSeconds,
+    assessmentS3OperationsTotal
+} from "../shared/metrics";
+
+async function observeS3Operation<T>(
+    operation: string,
+    fn: () => Promise<T>
+): Promise<T> {
+    const startNs: bigint = process.hrtime.bigint();
+    let result: "success" | "error" = "success";
+    try {
+        return await fn();
+    } catch (error: unknown) {
+        result = "error";
+        throw error;
+    } finally {
+        const durationSeconds: number = Number(process.hrtime.bigint() - startNs) / 1e9;
+        assessmentS3OperationDurationSeconds.observe({ operation }, durationSeconds);
+        assessmentS3OperationsTotal.inc({ operation, result });
+    }
+}
 
 export interface PdfValidationResult {
     sha256: string;
@@ -184,25 +206,27 @@ export function closeS3Clients(): void {
 export function createS3AssessmentStorage(env: EnvConfig): AssessmentStorage {
     return {
         async ensureBucket(): Promise<void> {
-            const client: S3Client = getS3Client(env);
-            try {
-                await client.send(new HeadBucketCommand({ Bucket: env.s3Bucket }));
-            } catch (error: unknown) {
-                if (!isNotFoundS3Error(error)) {
-                    throw AppError.badGateway("STORAGE_ERROR", "Unable to verify S3 storage bucket.");
-                }
-                if (!env.s3AutoCreateBucket) {
-                    throw AppError.badGateway(
-                        "STORAGE_BUCKET_MISSING",
-                        "Configured S3 bucket does not exist."
-                    );
-                }
+            return observeS3Operation("ensure_bucket", async (): Promise<void> => {
+                const client: S3Client = getS3Client(env);
                 try {
-                    await client.send(new CreateBucketCommand({ Bucket: env.s3Bucket }));
-                } catch {
-                    throw AppError.badGateway("STORAGE_ERROR", "Failed to create S3 storage bucket.");
+                    await client.send(new HeadBucketCommand({ Bucket: env.s3Bucket }));
+                } catch (error: unknown) {
+                    if (!isNotFoundS3Error(error)) {
+                        throw AppError.badGateway("STORAGE_ERROR", "Unable to verify S3 storage bucket.");
+                    }
+                    if (!env.s3AutoCreateBucket) {
+                        throw AppError.badGateway(
+                            "STORAGE_BUCKET_MISSING",
+                            "Configured S3 bucket does not exist."
+                        );
+                    }
+                    try {
+                        await client.send(new CreateBucketCommand({ Bucket: env.s3Bucket }));
+                    } catch {
+                        throw AppError.badGateway("STORAGE_ERROR", "Failed to create S3 storage bucket.");
+                    }
                 }
-            }
+            });
         },
 
         async putJson(
@@ -210,30 +234,32 @@ export function createS3AssessmentStorage(env: EnvConfig): AssessmentStorage {
             payload: unknown,
             metadata: Record<string, string> = {}
         ): Promise<void> {
-            const client: S3Client = getS3Client(env);
-            const serialized: string = JSON.stringify(payload);
-            const bodyBuffer: Buffer = Buffer.from(serialized, "utf8");
-            const sha256: string = createHash("sha256").update(bodyBuffer).digest("hex");
-            try {
-                await client.send(
-                    new PutObjectCommand({
-                        Bucket: env.s3Bucket,
-                        Key: key,
-                        Body: bodyBuffer,
-                        ContentType: "application/json; charset=utf-8",
-                        CacheControl: "private, no-store",
-                        Metadata: {
-                            ...metadata,
-                            sha256
-                        }
-                    })
-                );
-            } catch {
-                throw AppError.badGateway(
-                    "STORAGE_ERROR",
-                    "Failed to upload assessment JSON object to S3."
-                );
-            }
+            return observeS3Operation("put_json", async (): Promise<void> => {
+                const client: S3Client = getS3Client(env);
+                const serialized: string = JSON.stringify(payload);
+                const bodyBuffer: Buffer = Buffer.from(serialized, "utf8");
+                const sha256: string = createHash("sha256").update(bodyBuffer).digest("hex");
+                try {
+                    await client.send(
+                        new PutObjectCommand({
+                            Bucket: env.s3Bucket,
+                            Key: key,
+                            Body: bodyBuffer,
+                            ContentType: "application/json; charset=utf-8",
+                            CacheControl: "private, no-store",
+                            Metadata: {
+                                ...metadata,
+                                sha256
+                            }
+                        })
+                    );
+                } catch {
+                    throw AppError.badGateway(
+                        "STORAGE_ERROR",
+                        "Failed to upload assessment JSON object to S3."
+                    );
+                }
+            });
         },
 
         async putPdf(
@@ -241,63 +267,67 @@ export function createS3AssessmentStorage(env: EnvConfig): AssessmentStorage {
             buffer: Buffer,
             metadata: Record<string, string> = {}
         ): Promise<void> {
-            const client: S3Client = getS3Client(env);
-            const sha256: string = createHash("sha256").update(buffer).digest("hex");
-            try {
-                await client.send(
-                    new PutObjectCommand({
-                        Bucket: env.s3Bucket,
-                        Key: key,
-                        Body: buffer,
-                        ContentType: "application/pdf",
-                        ContentDisposition: 'inline; filename="assessment.pdf"',
-                        CacheControl: "private, no-store",
-                        Metadata: {
-                            ...metadata,
-                            sha256
-                        }
-                    })
-                );
-            } catch {
-                throw AppError.badGateway(
-                    "STORAGE_ERROR",
-                    "Failed to upload assessment PDF object to S3."
-                );
-            }
+            return observeS3Operation("put_pdf", async (): Promise<void> => {
+                const client: S3Client = getS3Client(env);
+                const sha256: string = createHash("sha256").update(buffer).digest("hex");
+                try {
+                    await client.send(
+                        new PutObjectCommand({
+                            Bucket: env.s3Bucket,
+                            Key: key,
+                            Body: buffer,
+                            ContentType: "application/pdf",
+                            ContentDisposition: 'inline; filename="assessment.pdf"',
+                            CacheControl: "private, no-store",
+                            Metadata: {
+                                ...metadata,
+                                sha256
+                            }
+                        })
+                    );
+                } catch {
+                    throw AppError.badGateway(
+                        "STORAGE_ERROR",
+                        "Failed to upload assessment PDF object to S3."
+                    );
+                }
+            });
         },
 
         async getJson<T>(key: string): Promise<T> {
-            const client: S3Client = getS3Client(env);
-            try {
-                const output = await client.send(
-                    new GetObjectCommand({
-                        Bucket: env.s3Bucket,
-                        Key: key
-                    })
-                );
-                if (!output.Body) {
-                    throw AppError.notFound(
-                        "STORAGE_OBJECT_NOT_FOUND",
-                        "Assessment storage object was empty or missing."
+            return observeS3Operation("get_json", async (): Promise<T> => {
+                const client: S3Client = getS3Client(env);
+                try {
+                    const output = await client.send(
+                        new GetObjectCommand({
+                            Bucket: env.s3Bucket,
+                            Key: key
+                        })
+                    );
+                    if (!output.Body) {
+                        throw AppError.notFound(
+                            "STORAGE_OBJECT_NOT_FOUND",
+                            "Assessment storage object was empty or missing."
+                        );
+                    }
+                    const text: string = await output.Body.transformToString("utf-8");
+                    return JSON.parse(text) as T;
+                } catch (error: unknown) {
+                    if (error instanceof AppError) {
+                        throw error;
+                    }
+                    if (isNotFoundS3Error(error)) {
+                        throw AppError.notFound(
+                            "STORAGE_OBJECT_NOT_FOUND",
+                            "Assessment storage object was not found."
+                        );
+                    }
+                    throw AppError.badGateway(
+                        "STORAGE_ERROR",
+                        "Failed to retrieve assessment data from S3."
                     );
                 }
-                const text: string = await output.Body.transformToString("utf-8");
-                return JSON.parse(text) as T;
-            } catch (error: unknown) {
-                if (error instanceof AppError) {
-                    throw error;
-                }
-                if (isNotFoundS3Error(error)) {
-                    throw AppError.notFound(
-                        "STORAGE_OBJECT_NOT_FOUND",
-                        "Assessment storage object was not found."
-                    );
-                }
-                throw AppError.badGateway(
-                    "STORAGE_ERROR",
-                    "Failed to retrieve assessment data from S3."
-                );
-            }
+            });
         },
 
         async getPresignedPdfUrl(
@@ -310,27 +340,29 @@ export function createS3AssessmentStorage(env: EnvConfig): AssessmentStorage {
                     "Presigned URL generation is only allowed for PDF content objects."
                 );
             }
-            const client: S3Client = getPresignClient(env);
-            const ttlSeconds: number = expiresInSeconds ?? env.s3PresignExpiresInSeconds;
-            try {
-                const url: string = await getSignedUrl(
-                    client,
-                    new GetObjectCommand({
-                        Bucket: env.s3Bucket,
-                        Key: key
-                    }),
-                    { expiresIn: ttlSeconds }
-                );
-                return {
-                    url,
-                    expiresInSeconds: ttlSeconds
-                };
-            } catch {
-                throw AppError.badGateway(
-                    "STORAGE_ERROR",
-                    "Failed to generate presigned URL for assessment PDF."
-                );
-            }
+            return observeS3Operation("presign_pdf", async (): Promise<PresignedUrlResult> => {
+                const client: S3Client = getPresignClient(env);
+                const ttlSeconds: number = expiresInSeconds ?? env.s3PresignExpiresInSeconds;
+                try {
+                    const url: string = await getSignedUrl(
+                        client,
+                        new GetObjectCommand({
+                            Bucket: env.s3Bucket,
+                            Key: key
+                        }),
+                        { expiresIn: ttlSeconds }
+                    );
+                    return {
+                        url,
+                        expiresInSeconds: ttlSeconds
+                    };
+                } catch {
+                    throw AppError.badGateway(
+                        "STORAGE_ERROR",
+                        "Failed to generate presigned URL for assessment PDF."
+                    );
+                }
+            });
         },
 
         async deleteObjects(keys: string[]): Promise<void> {
@@ -342,23 +374,25 @@ export function createS3AssessmentStorage(env: EnvConfig): AssessmentStorage {
             if (uniqueKeys.length === 0) {
                 return;
             }
-            const client: S3Client = getS3Client(env);
-            try {
-                await client.send(
-                    new DeleteObjectsCommand({
-                        Bucket: env.s3Bucket,
-                        Delete: {
-                            Objects: uniqueKeys.map((Key: string): { Key: string } => ({ Key })),
-                            Quiet: true
-                        }
-                    })
-                );
-            } catch {
-                throw AppError.badGateway(
-                    "STORAGE_ERROR",
-                    "Failed to delete assessment objects from S3."
-                );
-            }
+            return observeS3Operation("delete_objects", async (): Promise<void> => {
+                const client: S3Client = getS3Client(env);
+                try {
+                    await client.send(
+                        new DeleteObjectsCommand({
+                            Bucket: env.s3Bucket,
+                            Delete: {
+                                Objects: uniqueKeys.map((Key: string): { Key: string } => ({ Key })),
+                                Quiet: true
+                            }
+                        })
+                    );
+                } catch {
+                    throw AppError.badGateway(
+                        "STORAGE_ERROR",
+                        "Failed to delete assessment objects from S3."
+                    );
+                }
+            });
         }
     };
 }

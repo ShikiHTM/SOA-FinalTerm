@@ -1,4 +1,5 @@
 import { type IncomingMessage, type ServerResponse } from "node:http";
+import { lmsNotificationsCreatedTotal } from "../metrics.ts";
 import { type Notification } from "../models/notification.ts";
 import { NotificationService, ValidationError, toApiNotification } from "../services/notification.service.ts";
 
@@ -50,6 +51,7 @@ export class NotificationController {
         try {
             const payload: unknown = await readBody(request);
             const notification: Notification = await this.service.create(payload);
+            lmsNotificationsCreatedTotal.inc({ type: notification.type, source: "http" });
             sendJson(response, 201, toApiNotification(notification));
         } catch (error: unknown) {
             if (error instanceof RangeError) sendError(response, 413, "PAYLOAD_TOO_LARGE", error.message);

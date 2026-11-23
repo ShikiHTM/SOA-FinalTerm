@@ -3533,6 +3533,135 @@ textarea:focus-visible {
     justify-self: end;
     min-width: 180px;
 }
+.attempt-page.attempt-page-wide {
+    max-width: 1400px;
+}
+.pdf-attempt-split {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 320px;
+    gap: 18px;
+    align-items: start;
+    margin-top: 20px;
+}
+.pdf-viewer-pane,
+.pdf-answersheet-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 16px;
+}
+.pdf-pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+.pdf-pane-header h2 {
+    margin: 0;
+    font-size: 15px;
+}
+.pdf-pane-header .link-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+}
+.pdf-viewer-frame {
+    width: 100%;
+    height: calc(100vh - 140px);
+    min-height: 560px;
+    border: 1px solid var(--theme-border);
+    border-radius: 9px;
+    background: var(--theme-raised);
+}
+.pdf-answersheet-pane {
+    position: sticky;
+    top: 20px;
+    max-height: calc(100vh - 40px);
+}
+.answer-sheet-rows {
+    display: flex;
+    flex-direction: column;
+    margin: 0;
+    padding: 0 4px 0 0;
+    overflow-y: auto;
+    list-style: none;
+}
+.answer-sheet-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 4px;
+    border-bottom: 1px solid var(--theme-border);
+}
+.answer-sheet-row:last-child {
+    border-bottom: 0;
+}
+.answer-sheet-num {
+    width: 28px;
+    color: var(--theme-muted);
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    text-align: right;
+}
+.answer-bubble-group {
+    display: flex;
+    gap: 8px;
+}
+.answer-bubble {
+    display: inline-grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid var(--theme-border);
+    border-radius: 999px;
+    background: var(--theme-surface);
+    color: var(--theme-text);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition:
+        background 0.15s ease,
+        border-color 0.15s ease,
+        transform 0.1s ease;
+}
+.answer-bubble:hover {
+    border-color: var(--theme-muted);
+}
+.answer-bubble:active {
+    transform: scale(0.94);
+}
+.answer-bubble.active {
+    border-color: var(--theme-accent);
+    background: var(--theme-accent);
+    color: var(--theme-accent-text);
+}
+.answer-key-row {
+    padding: 0;
+    border-bottom: 0;
+}
+.pdf-answersheet-footer {
+    display: grid;
+    gap: 10px;
+    padding-top: 4px;
+}
+.pdf-answersheet-footer .button {
+    width: 100%;
+}
+@media (max-width: 960px) {
+    .pdf-attempt-split {
+        grid-template-columns: 1fr;
+    }
+    .pdf-answersheet-pane {
+        position: static;
+        max-height: none;
+    }
+    .pdf-viewer-frame {
+        height: 70vh;
+    }
+}
 @media (max-width: 700px) {
     .attempt-hero {
         flex-wrap: wrap;

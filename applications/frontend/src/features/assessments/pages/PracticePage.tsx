@@ -16,6 +16,7 @@ import type {
 } from "../../../api/types";
 import { extractErrorMessage } from "../../../data/http/httpClient";
 import { PageTitle } from "../../../shared/context";
+import { buildPdfAnswers, PdfAnswerSheet, pdfRowIds } from "../components/PdfAnswerSheet";
 
 export function Practice(): ReactNode {
     const { assessmentId }: { assessmentId?: string } = useParams();
@@ -60,10 +61,13 @@ export function Practice(): ReactNode {
     }, [assessmentId]);
 
     async function handleSubmit(): Promise<void> {
-        if (!assessment || !content?.questions) {
+        if (!assessment || !content) {
             return;
         }
-        const formattedAnswers: SubmittedAnswerInput[] = content.questions.map(
+        const formattedAnswers: SubmittedAnswerInput[] =
+            content.content_format === "PDF"
+                ? buildPdfAnswers(pdfRowIds(assessment.question_count), answers)
+                : (content.questions ?? []).map(
             (q: PublicQuestion): SubmittedAnswerInput => {
                 const raw: string | string[] | undefined = answers[q.id];
                 return {
@@ -102,7 +106,7 @@ export function Practice(): ReactNode {
     if (loading) {
         return <p className="muted">Loading practice session...</p>;
     }
-    if (!assessment || !assessment.is_practice_enabled || content?.content_format !== "JSON") {
+    if (!assessment || !assessment.is_practice_enabled || !content) {
         return (
             <div className="page-enter">
                 <Link className="back" to={assessment ? `/assessments/${assessment.id}` : "/groups"}>
@@ -113,7 +117,50 @@ export function Practice(): ReactNode {
                         {error}
                     </p>
                 )}
-                <p className="empty">This assessment is not enabled for digital practice.</p>
+                <p className="empty">This assessment is not enabled for practice.</p>
+            </div>
+        );
+    }
+
+    const submitButton: ReactNode = (
+        <>
+            {error && (
+                <p className="error" role="alert">
+                    {error}
+                </p>
+            )}
+            <button
+                className="button primary"
+                type="button"
+                disabled={submitting}
+                onClick={(): void => {
+                    void handleSubmit();
+                }}
+            >
+                {submitting ? "Submitting..." : "Submit practice attempt"}
+            </button>
+        </>
+    );
+
+    if (content.content_format === "PDF") {
+        return (
+            <div className="attempt-page attempt-page-wide page-enter">
+                <Link className="back" to={`/assessments/${assessment.id}`}>
+                    ← Assessment details
+                </Link>
+                <PageTitle
+                    label="PRACTICE MODE"
+                    title={assessment.title}
+                    description="Read the exam on the left and fill in the answer sheet on the right."
+                />
+                <PdfAnswerSheet
+                    pdfUrl={content.pdf_url}
+                    title={assessment.title}
+                    rowIds={pdfRowIds(assessment.question_count)}
+                    answers={answers}
+                    onChange={setAnswers}
+                    footer={submitButton}
+                />
             </div>
         );
     }
@@ -210,21 +257,7 @@ export function Practice(): ReactNode {
                         </section>
                     )
                 )}
-                {error && (
-                    <p className="error" role="alert">
-                        {error}
-                    </p>
-                )}
-                <button
-                    className="button primary"
-                    type="button"
-                    disabled={submitting}
-                    onClick={(): void => {
-                        void handleSubmit();
-                    }}
-                >
-                    {submitting ? "Submitting..." : "Submit practice attempt"}
-                </button>
+                {submitButton}
             </div>
         </div>
     );
