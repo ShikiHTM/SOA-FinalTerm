@@ -13,7 +13,7 @@ The LMS Assessment and Grading Module is a web-based application designed to sup
 - **Exam Packages**: Each Assessment represents a complete examination set supporting single-choice, multiple-choice, fill-in-the-blank, and rich-text essay items.
 - **Authoring & Access**: Assessments can be created directly on the platform or imported from PDF documents, with answer keys for multiple-choice items mapped manually.
 - **Contest Rules**: Organizers define fixed start/end timestamps, visibility (group-scoped), and submission policies (e.g. single attempt, or multiple attempts where only the final submission is evaluated).
-- **Submission & Grading Pipeline**: In-progress answers are cached locally via localStorage. Once submitted, the answers enter an asynchronous Kafka processing flow: objective items are auto-graded immediately, whereas rich-text essays remain PENDING until manually evaluated by the Accessment Owner to publish the combined result.
+- **Submission & Grading Pipeline**: Once submitted, the answers enter an asynchronous Kafka processing flow: objective items are auto-graded immediately, whereas rich-text essays remain PENDING until manually evaluated by the Accessment Owner to publish the combined result.
 - **Notifications**: Processes events from other microservices and manages user notifications.
 - **System Monitoring**: Encompasses microservice operational health tracking and performance visualization using Prometheus and Grafana.
 
